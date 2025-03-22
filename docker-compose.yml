@@ -1,0 +1,57 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: dev.Dockerfile
+    ports:
+      - ${LISTEN_PORT:-8080}:${LISTEN_PORT:-8080}
+    depends_on:
+      - postgres
+      - nats
+    volumes:
+      - ./:/app
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      - NATS_URL=nats://nats:${NATS_PORT:-4222}
+    networks:
+      - template-network
+    restart: unless-stopped
+
+  postgres:
+    image: "postgres:16.2"
+    ports:
+      - ${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}
+    environment:
+      POSTGRES_ROOT_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_ROOT_HOST: "%"
+      POSTGRES_DATABASE: "${POSTGRES_DB_NAME}"
+      POSTGRES_USER: "${POSTGRES_USERNAME}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_ALLOW_EMPTY_PASSWORD: 1
+    volumes:
+      - "template-postgres:/var/lib/postgresql/data"
+    networks:
+      - template-network
+
+  nats:
+    image: "nats:2.10-alpine"
+    ports:
+      - "${NATS_PORT:-4222}:4222"  # Client connections
+      - "${NATS_MONITORING_PORT:-8222}:8222"  # HTTP monitoring
+    command: "-js -m 8222 --jetstream ${NATS_ADDITIONAL_ARGS:-}"
+    volumes:
+      - "template-nats-data:/data"
+    networks:
+      - template-network
+    restart: unless-stopped
+
+networks:
+  template-network:
+    driver: bridge
+
+volumes:
+  template-postgres:
+    driver: local
+  template-nats-data:
+    driver: local

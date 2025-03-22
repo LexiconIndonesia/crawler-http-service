@@ -1,0 +1,70 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.1'
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Install dependencies
+        run: go mod tidy && go mod vendor
+
+
+      - name: Run linters
+        run: golangci-lint run --timeout=5m
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.1'
+
+      - name: Install dependencies
+        run: go mod tidy && go mod vendor
+
+      - name: Run tests
+        run: go test -v ./... -race
+
+  build-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.24.1'
+
+      - name: Install dependencies
+        run: go mod tidy && go mod vendor
+
+      - name: Build binary
+        run: go build -v -o app
+
+      - name: Upload built binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: application
+          path: app
+          retention-days: 1
+          if-no-files-found: error

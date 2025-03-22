@@ -1,0 +1,232 @@
+basePath: /v1
+definitions:
+  module.MessageRequest:
+    type: object
+  module.MessageResponse:
+    properties:
+      sequence:
+        example: 1
+        type: integer
+      stream:
+        example: MESSAGES
+        type: string
+      subject:
+        example: notifications.user.created
+        type: string
+    type: object
+  module.UserCreationRequest:
+    properties:
+      email:
+        example: user@example.com
+        type: string
+      first_name:
+        example: John
+        type: string
+      last_name:
+        example: Doe
+        type: string
+      password:
+        example: Password123!
+        minLength: 8
+        type: string
+    required:
+    - email
+    - first_name
+    - last_name
+    - password
+    type: object
+  module.UserResponse:
+    properties:
+      created_at:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+      email:
+        example: user@example.com
+        type: string
+      first_name:
+        example: John
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+      last_name:
+        example: Doe
+        type: string
+      updated_at:
+        example: "2023-01-01T00:00:00Z"
+        type: string
+    type: object
+  utils.Response:
+    properties:
+      data: {}
+      error:
+        type: string
+      message:
+        type: string
+      status:
+        type: integer
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@example.com
+    name: API Support
+    url: http://www.example.com/support
+  description: API documentation for Go HTTP Service Template
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Go HTTP Service API
+  version: "1.0"
+paths:
+  /:
+    get:
+      description: Simple health check endpoint to verify the service is running
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Service is healthy
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                message:
+                  type: string
+              type: object
+      summary: Health check
+      tags:
+      - system
+  /messaging/publish:
+    post:
+      consumes:
+      - application/json
+      description: Publish a message to the specified subject
+      parameters:
+      - description: Message publishing request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/module.MessageRequest'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Message published successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/module.MessageResponse'
+              type: object
+        "400":
+          description: Invalid request body
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                error:
+                  type: string
+              type: object
+        "500":
+          description: Internal server error
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                error:
+                  type: string
+              type: object
+      summary: Publish a message
+      tags:
+      - messaging
+  /messaging/subscribe/{subject}:
+    get:
+      description: Subscribe to messages on a subject using WebSocket
+      parameters:
+      - description: Subject to subscribe to
+        in: path
+        name: subject
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Subscription information
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                message:
+                  type: string
+              type: object
+        "400":
+          description: Invalid subject
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                error:
+                  type: string
+              type: object
+      summary: Subscribe to a subject
+      tags:
+      - messaging
+  /users:
+    post:
+      consumes:
+      - application/json
+      description: Create a new user with the provided information
+      parameters:
+      - description: User creation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/module.UserCreationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: User created successfully
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                data:
+                  $ref: '#/definitions/module.UserResponse'
+              type: object
+        "400":
+          description: Invalid request body
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                error:
+                  type: string
+              type: object
+        "500":
+          description: Internal server error
+          schema:
+            allOf:
+            - $ref: '#/definitions/utils.Response'
+            - properties:
+                error:
+                  type: string
+              type: object
+      summary: Create a new user
+      tags:
+      - users
+schemes:
+- http
+- https
+securityDefinitions:
+  ApiKeyAuth:
+    in: header
+    name: X-API-KEY
+    type: apiKey
+swagger: "2.0"
