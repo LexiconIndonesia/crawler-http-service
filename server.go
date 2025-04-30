@@ -99,7 +99,7 @@ func (s *AppHttpServer) setupRoute() {
 		r.Mount("/module", mod.Router())
 
 		// Legacy module access (will be deprecated)
-		r.Mount("/legacy-module", module.Router())
+		r.Mount("/legacy-module", mod.SetupBaseRoutes())
 	})
 }
 

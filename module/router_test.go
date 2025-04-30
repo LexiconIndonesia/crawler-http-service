@@ -69,11 +69,11 @@ func TestModuleWithMockDB(t *testing.T) {
 	mod := NewModule(mockDB.DB, mockNats.NatsClient)
 
 	// Test the module
-	if mod.DB != mockDB.DB {
+	if mod.db != mockDB.DB {
 		t.Errorf("expected DB to be the mock DB instance")
 	}
 
-	if mod.NatsClient != mockNats.NatsClient {
+	if mod.natsClient != mockNats.NatsClient {
 		t.Errorf("expected NatsClient to be the mock NATS client instance")
 	}
 }

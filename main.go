@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"github.com/adryanev/go-http-service-template/common/db"
+	"github.com/adryanev/go-http-service-template/common/logger"
 	"github.com/adryanev/go-http-service-template/common/messaging"
+	crawler "github.com/adryanev/go-http-service-template/crawlers"
+	"github.com/adryanev/go-http-service-template/module"
 	"github.com/adryanev/go-http-service-template/repository"
 
 	"github.com/rs/zerolog/log"
@@ -71,6 +74,10 @@ func main() {
 	}
 	defer dbConn.Close()
 
+	// Initialize zerolog database hooks
+	logger.InitializeLogging(dbConn)
+	log.Info().Msg("Zerolog database hooks initialized")
+
 	// INITIATE NATS CLIENT
 	natsClient, err := setupNatsClient(cfg)
 	if err != nil {
@@ -83,6 +90,32 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to setup global subscriptions")
 	}
 
+	// Register all crawlers to listen to NATS messages
+	if err := crawler.RegisterCrawlers(natsClient, dbConn); err != nil {
+		log.Fatal().Err(err).Msg("Failed to register crawlers")
+	}
+	log.Info().Msg("Crawlers registered successfully")
+
+	// Initialize extractor worker
+	crawlerService := crawler.NewCrawlerService(dbConn)
+	// Direct type assertion to access the underlying implementation
+	serviceImpl, ok := crawlerService.(*crawler.CrawlerServiceImpl)
+	if ok {
+		serviceImpl.SetNatsClient(natsClient)
+	} else {
+		log.Warn().Msg("Could not type assert crawler service to set NATS client")
+	}
+	extractorWorker := crawler.NewExtractorWorker(natsClient, crawlerService)
+
+	// Start extractor worker in a goroutine
+	extractorCtx, extractorCancel := context.WithCancel(ctx)
+	defer extractorCancel()
+
+	if err := extractorWorker.Start(extractorCtx); err != nil {
+		log.Fatal().Err(err).Msg("Failed to start extractor worker")
+	}
+	log.Info().Msg("Extractor worker started successfully")
+
 	// INITIATE SERVER
 	server, err := NewAppHttpServer(cfg)
 	if err != nil {
@@ -92,6 +125,11 @@ func main() {
 	// Inject dependencies
 	server.SetDB(dbConn)
 	server.SetNatsClient(natsClient)
+
+	// Register services to the module
+	mod := module.NewModule(dbConn, natsClient)
+	mod.RegisterService("crawler", crawlerService)
+	mod.RegisterService("extractor", extractorWorker)
 
 	// Setup routes
 	server.setupRoute()

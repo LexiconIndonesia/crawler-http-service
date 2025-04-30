@@ -58,7 +58,7 @@ func (m *Module) publishMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if NATS client is available
-	if m.NatsClient == nil {
+	if m.natsClient == nil {
 		log.Error().Msg("NATS client is not available")
 		utils.WriteError(w, http.StatusInternalServerError, "Messaging service is not available")
 		return
@@ -71,7 +71,7 @@ func (m *Module) publishMessage(w http.ResponseWriter, r *http.Request) {
 	// Check if we need to create a stream for this subject
 	// This would normally be done during service setup, but for demo we'll do it here
 	streamName := "MESSAGES"
-	_, err := ensureStream(ctx, m.NatsClient, streamName, []string{req.Subject, fmt.Sprintf("%s.*", req.Subject)})
+	_, err := ensureStream(ctx, m.natsClient, streamName, []string{req.Subject, fmt.Sprintf("%s.*", req.Subject)})
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to ensure stream exists")
 		utils.WriteError(w, http.StatusInternalServerError, "Failed to ensure messaging infrastructure")
@@ -79,7 +79,7 @@ func (m *Module) publishMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish message to JetStream
-	ack, err := m.NatsClient.PublishAsync(req.Subject, req.Data)
+	ack, err := m.natsClient.PublishAsync(req.Subject, req.Data)
 	if err != nil {
 		log.Error().Err(err).Str("subject", req.Subject).Msg("Failed to publish message")
 		utils.WriteError(w, http.StatusInternalServerError, "Failed to publish message")
