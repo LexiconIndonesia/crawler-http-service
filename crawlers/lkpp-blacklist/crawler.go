@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adryanev/go-http-service-template/common"
 	crawler "github.com/adryanev/go-http-service-template/crawlers"
+	"github.com/adryanev/go-http-service-template/repository"
 	"github.com/go-rod/rod"
 	"github.com/rs/zerolog/log"
 )
@@ -20,8 +22,9 @@ type LKPPBlacklistCrawler struct {
 }
 
 // NewCrawler creates a new LKPP Blacklist crawler
-func NewCrawler(service crawler.CrawlerService) *LKPPBlacklistCrawler {
-	baseCrawler := crawler.NewBaseCrawler(Config, service)
+func NewCrawler(service crawler.CrawlerService, dataSource repository.DataSource) *LKPPBlacklistCrawler {
+	config := crawler.NewCrawlerConfig(common.LKPPBlacklist, dataSource)
+	baseCrawler := crawler.NewBaseCrawler(config, service)
 
 	// Set custom browser options
 	baseCrawler.BrowserOpts.WaitAfterLoad = 5 * time.Second // longer wait for dynamic content
@@ -151,7 +154,7 @@ func (c *LKPPBlacklistCrawler) CrawlByKeyword(ctx context.Context, keyword strin
 
 	// Form the search URL with the given keyword
 	searchURL := fmt.Sprintf("https://%s/daftar-hitam/pencarian?q=%s",
-		CRAWLER_DOMAIN, keyword)
+		c.Config.DataSource.BaseUrl.String, keyword)
 
 	// Navigate to search URL
 	page, err := c.Navigate(ctx, searchURL)

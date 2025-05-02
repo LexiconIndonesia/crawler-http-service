@@ -4,23 +4,18 @@ import (
 	"fmt"
 
 	"github.com/adryanev/go-http-service-template/common"
+	"github.com/adryanev/go-http-service-template/repository"
 )
 
 // GetCrawlerByType creates a new crawler instance based on the specified type
-func GetCrawlerByType(crawlerType common.CrawlerType, service CrawlerService) (Crawler, error) {
+func GetCrawlerByType(crawlerType common.CrawlerType, service CrawlerService, dataSource repository.DataSource) (Crawler, error) {
 	switch crawlerType {
 	case common.IndonesiaSupremeCourt:
-		config := NewCrawlerConfig(common.IndonesiaSupremeCourt, "mahkamahagung.go.id")
-		baseCrawler := NewBaseCrawler(config, service)
-		return &IndonesiaSupremeCourtCrawler{BaseCrawler: baseCrawler}, nil
+		return NewIndonesiaSupremeCourtCrawler(service, dataSource), nil
 	case common.SingaporeSupremeCourt:
-		config := NewCrawlerConfig(common.SingaporeSupremeCourt, "supremecourt.gov.sg")
-		baseCrawler := NewBaseCrawler(config, service)
-		return &SingaporeSupremeCourtCrawler{BaseCrawler: baseCrawler}, nil
+		return NewSingaporeSupremeCourtCrawler(service, dataSource), nil
 	case common.LKPPBlacklist:
-		config := NewCrawlerConfig(common.LKPPBlacklist, "blacklist.lkpp.go.id")
-		baseCrawler := NewBaseCrawler(config, service)
-		return &LKPPBlacklistCrawler{BaseCrawler: baseCrawler}, nil
+		return NewLKPPBlacklistCrawler(service, dataSource), nil
 	default:
 		return nil, fmt.Errorf("unsupported crawler type: %s", crawlerType)
 	}

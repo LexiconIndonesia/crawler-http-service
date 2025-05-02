@@ -105,15 +105,6 @@ func main() {
 	} else {
 		log.Warn().Msg("Could not type assert crawler service to set NATS client")
 	}
-	extractorWorker := crawler.NewExtractorWorker(natsClient, crawlerService)
-
-	// Start extractor worker in a goroutine
-	extractorCtx, extractorCancel := context.WithCancel(ctx)
-	defer extractorCancel()
-
-	if err := extractorWorker.Start(extractorCtx); err != nil {
-		log.Fatal().Err(err).Msg("Failed to start extractor worker")
-	}
 	log.Info().Msg("Extractor worker started successfully")
 
 	// INITIATE SERVER
@@ -129,7 +120,6 @@ func main() {
 	// Register services to the module
 	mod := module.NewModule(dbConn, natsClient)
 	mod.RegisterService("crawler", crawlerService)
-	mod.RegisterService("extractor", extractorWorker)
 
 	// Setup routes
 	server.setupRoute()

@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/adryanev/go-http-service-template/common"
 	crawler "github.com/adryanev/go-http-service-template/crawlers"
+	"github.com/adryanev/go-http-service-template/repository"
 	"github.com/go-rod/rod"
 	"github.com/rs/zerolog/log"
 )
@@ -20,8 +22,9 @@ type SingaporeSupremeCourtCrawler struct {
 }
 
 // NewCrawler creates a new Singapore Supreme Court crawler
-func NewCrawler(service crawler.CrawlerService) *SingaporeSupremeCourtCrawler {
-	baseCrawler := crawler.NewBaseCrawler(Config, service)
+func NewCrawler(service crawler.CrawlerService, dataSource repository.DataSource) *SingaporeSupremeCourtCrawler {
+	config := crawler.NewCrawlerConfig(common.SingaporeSupremeCourt, dataSource)
+	baseCrawler := crawler.NewBaseCrawler(config, service)
 
 	// Set custom browser options if needed
 	baseCrawler.BrowserOpts.WaitAfterLoad = 3 * time.Second
@@ -73,7 +76,7 @@ func (c *SingaporeSupremeCourtCrawler) ExtractElements(ctx context.Context, page
 				pdfURL = *href
 				if !strings.HasPrefix(pdfURL, "http") {
 					// Handle relative URLs
-					pdfURL = fmt.Sprintf("https://%s%s", CRAWLER_DOMAIN, pdfURL)
+					pdfURL = fmt.Sprintf("https://%s%s", c.Config.DataSource.BaseUrl.String, pdfURL)
 				}
 			}
 		}
@@ -147,7 +150,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 	// Form the search URL with the given keyword
 	// Example: https://www.supremecourt.gov.sg/news/judgments?keyword=corruption
 	searchURL := fmt.Sprintf("https://www.%s/news/judgments?keyword=%s",
-		CRAWLER_DOMAIN, keyword)
+		c.Config.DataSource.BaseUrl.String, keyword)
 
 	// Navigate to search URL
 	page, err := c.Navigate(ctx, searchURL)

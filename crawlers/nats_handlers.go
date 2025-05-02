@@ -9,16 +9,18 @@ import (
 	"github.com/adryanev/go-http-service-template/common"
 	"github.com/adryanev/go-http-service-template/common/db"
 	"github.com/adryanev/go-http-service-template/common/messaging"
+	"github.com/adryanev/go-http-service-template/repository"
 	"github.com/nats-io/nats.go"
 	"github.com/rs/zerolog/log"
 )
 
 // CrawlMessage represents the structure of a NATS message for crawling
 type CrawlMessage struct {
-	CrawlerType string `json:"crawler_type"`
-	Action      string `json:"action"`  // "crawl_all", "crawl_url", "crawl_keyword"
-	URL         string `json:"url"`     // Used for crawl_url
-	Keyword     string `json:"keyword"` // Used for crawl_keyword
+	CrawlerType  string `json:"crawler_type"`
+	Action       string `json:"action"`         // "crawl_all", "crawl_url", "crawl_keyword"
+	URL          string `json:"url"`            // Used for crawl_url
+	Keyword      string `json:"keyword"`        // Used for crawl_keyword
+	DataSourceID string `json:"data_source_id"` // Data source identifier
 }
 
 // RegisterCrawlers sets up all available crawlers to listen to NATS messages
@@ -70,16 +72,25 @@ func createCrawlerHandler(crawlerType common.CrawlerType, service CrawlerService
 			Str("crawler", string(crawlerType)).
 			Msg("Received crawler message")
 
-		// Create crawler instance
-		crawler, err := CreateCrawlerByType(crawlerType, service)
-		if err != nil {
-			return fmt.Errorf("failed to create crawler: %w", err)
-		}
-
 		// Parse the message
 		var crawlMsg CrawlMessage
 		if err := json.Unmarshal(msg.Data, &crawlMsg); err != nil {
 			return fmt.Errorf("failed to unmarshal message: %w", err)
+		}
+
+		// Create a data source
+		dataSource := repository.DataSource{
+			ID: crawlMsg.DataSourceID,
+		}
+		if dataSource.ID == "" {
+			// Use default data source ID based on crawler type
+			dataSource.ID = string(crawlerType)
+		}
+
+		// Create crawler instance
+		crawler, err := GetCrawlerByType(crawlerType, service, dataSource)
+		if err != nil {
+			return fmt.Errorf("failed to create crawler: %w", err)
 		}
 
 		// Create a context for the crawler operations
@@ -134,8 +145,17 @@ func handleGenericCrawlerMessage(service CrawlerService) messaging.MessageHandle
 			return fmt.Errorf("crawler type not specified")
 		}
 
+		// Create a data source
+		dataSource := repository.DataSource{
+			ID: crawlMsg.DataSourceID,
+		}
+		if dataSource.ID == "" {
+			// Use default data source ID based on crawler type
+			dataSource.ID = string(crawlerType)
+		}
+
 		// Create crawler instance
-		crawler, err := CreateCrawlerByType(crawlerType, service)
+		crawler, err := GetCrawlerByType(crawlerType, service, dataSource)
 		if err != nil {
 			return fmt.Errorf("failed to create crawler: %w", err)
 		}

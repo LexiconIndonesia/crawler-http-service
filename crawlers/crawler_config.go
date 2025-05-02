@@ -4,23 +4,24 @@ import (
 	"fmt"
 
 	"github.com/adryanev/go-http-service-template/common"
+	"github.com/adryanev/go-http-service-template/repository"
 )
 
 // CrawlerConfig holds configuration for a crawler
 type CrawlerConfig struct {
 	Name          string
-	DataSourceID  string
+	DataSource    repository.DataSource
 	GCSBucket     string
 	GCSFolder     string
 	GCSHTMLFolder string
 }
 
 // NewCrawlerConfig creates a new crawler configuration
-func NewCrawlerConfig(name common.CrawlerType, dataSourceID string) *CrawlerConfig {
+func NewCrawlerConfig(name common.CrawlerType, dataSource repository.DataSource) *CrawlerConfig {
 	config := &CrawlerConfig{
-		Name:         string(name),
-		DataSourceID: dataSourceID,
-		GCSBucket:    common.GCSBucketName,
+		Name:       string(name),
+		DataSource: dataSource,
+		GCSBucket:  common.GCSBucketName,
 	}
 
 	// Set default folders based on crawler name
@@ -41,8 +42,8 @@ func (c *CrawlerConfig) GetGCSHTMLFolder() string {
 }
 
 // GetDataSourceID returns the data source ID
-func (c *CrawlerConfig) GetDataSourceID() string {
-	return c.DataSourceID
+func (c *CrawlerConfig) GetDataSource() repository.DataSource {
+	return c.DataSource
 }
 
 type URLFrontierStatus int16

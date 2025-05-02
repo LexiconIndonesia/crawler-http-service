@@ -20,32 +20,24 @@ import (
 	"github.com/samber/lo"
 )
 
-type Crawler interface {
-	Setup()
-	Teardown()
-	CrawlAll(ctx context.Context) error
-	Crawl(ctx context.Context, url string) error
-	Consume(msg jetstream.Msg) error
+type IndonesiaSupremeCourtCrawler struct {
+	browser     *rod.Browser
+	service     *crawler.CrawlerService
+	baseCrawler *crawler.BaseCrawler
 }
 
-func NewCrawler() Crawler {
-	return &CrawlerImpl{}
+func NewIndonesiaSupremeCourtCrawler() *IndonesiaSupremeCourtCrawler {
+	return &IndonesiaSupremeCourtCrawler{}
 }
 
-type CrawlerImpl struct {
-	browser    *rod.Browser
-	service    *crawler.CrawlerService
-	dataSource *repository.DataSource
-}
-
-func (c *CrawlerImpl) Setup() {
+func (c *IndonesiaSupremeCourtCrawler) Setup() {
 	c.browser = rod.New().MustConnect()
 }
 
-func (c *CrawlerImpl) Teardown() {
+func (c *IndonesiaSupremeCourtCrawler) Teardown() {
 	c.browser.MustClose()
 }
-func (c *CrawlerImpl) CrawlAll(ctx context.Context) error {
+func (c *IndonesiaSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
 
 	keyword := "korupsi"
 	startPage := 1
@@ -196,14 +188,14 @@ func (c *CrawlerImpl) CrawlAll(ctx context.Context) error {
 	return nil
 }
 
-func (c *CrawlerImpl) Crawl(ctx context.Context, url string) error {
+func (c *IndonesiaSupremeCourtCrawler) Crawl(ctx context.Context, url string) error {
 	page := c.browser.MustPage(url)
 
 	defer page.Close()
 	return c.crawlUrl(ctx, page, url)
 }
 
-func (c *CrawlerImpl) Consume(msg jetstream.Msg) error {
+func (c *IndonesiaSupremeCourtCrawler) Consume(msg jetstream.Msg) error {
 	return nil
 }
 
@@ -270,7 +262,7 @@ func getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, 
 
 }
 
-func (c *CrawlerImpl) crawlUrl(ctx context.Context, rp *rod.Page, url string) error {
+func (c *IndonesiaSupremeCourtCrawler) crawlUrl(ctx context.Context, rp *rod.Page, url string) error {
 	log.Info().Msg("Crawling URL: " + url)
 
 	// Check context before starting
@@ -355,7 +347,7 @@ func (c *CrawlerImpl) crawlUrl(ctx context.Context, rp *rod.Page, url string) er
 			ID:  hex.EncodeToString(id[:]),
 			Url: detailUrl,
 
-			Domain:    c.dataSource.BaseUrl.String,
+			Domain:    c.baseCrawler.Config.DataSource.BaseUrl.String,
 			Status:    int16(crawler.URL_FRONTIER_STATUS_NEW),
 			Metadata:  metadataJson,
 			CreatedAt: currentTime,

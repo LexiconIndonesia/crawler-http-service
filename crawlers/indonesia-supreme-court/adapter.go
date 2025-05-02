@@ -5,20 +5,21 @@ import (
 
 	"github.com/adryanev/go-http-service-template/common"
 	crawler "github.com/adryanev/go-http-service-template/crawlers"
+	"github.com/adryanev/go-http-service-template/repository"
 	"github.com/go-rod/rod"
 )
 
 // CrawlerAdapter adapts the Indonesia Supreme Court crawler to the common crawler interface
 type CrawlerAdapter struct {
 	*crawler.BaseCrawler
-	internalCrawler Crawler
+	internalCrawler *IndonesiaSupremeCourtCrawler
 }
 
 // NewCrawlerAdapter creates a new adapter for the Indonesia Supreme Court crawler
-func NewCrawlerAdapter(service crawler.CrawlerService) *CrawlerAdapter {
-	config := crawler.NewCrawlerConfig(common.IndonesiaSupremeCourt, CRAWLER_DOMAIN)
+func NewCrawlerAdapter(service crawler.CrawlerService, dataSource repository.DataSource) *CrawlerAdapter {
+	config := crawler.NewCrawlerConfig(common.IndonesiaSupremeCourt, dataSource)
 	baseCrawler := crawler.NewBaseCrawler(config, service)
-	internalCrawler := NewCrawler()
+	internalCrawler := NewIndonesiaSupremeCourtCrawler()
 
 	return &CrawlerAdapter{
 		BaseCrawler:     baseCrawler,

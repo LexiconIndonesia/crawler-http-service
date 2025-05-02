@@ -33,6 +33,13 @@ type BrowserOptions struct {
 	WaitAfterLoad time.Duration
 }
 
+// ConsumeMessage defines the structure for messages consumed by crawlers
+type ConsumeMessage struct {
+	MessageID string          `json:"message_id"`
+	Type      string          `json:"type"`
+	Payload   json.RawMessage `json:"payload"`
+}
+
 // BaseCrawler provides common functionality for all web crawlers
 type BaseCrawler struct {
 	Config      *CrawlerConfig
@@ -178,7 +185,7 @@ func (c *BaseCrawler) CrawlByURL(ctx context.Context, url string) error {
 		id := uuid.New().String()
 		frontier = repository.UrlFrontier{
 			ID:           id,
-			DataSourceID: c.Config.DataSourceID,
+			DataSourceID: c.Config.DataSource.ID,
 			Domain:       getDomain(url),
 			Url:          url,
 			Status:       1, // Crawled
@@ -225,7 +232,7 @@ func (c *BaseCrawler) CrawlByURL(ctx context.Context, url string) error {
 	// Emit extract.run message
 	extractMsg := messaging.ExtractRunMessage{
 		URLFrontierID: frontier.ID,
-		DataSourceID:  c.Config.DataSourceID,
+		DataSourceID:  c.Config.DataSource.ID,
 		JobID:         uuid.New().String(),
 	}
 
@@ -313,16 +320,41 @@ func getDomain(url string) string {
 	return url
 }
 
-// Consume handles messages from a message broker
+// ExtractMsg extracts data from raw content and sends it to the extract service
 func (c *BaseCrawler) Consume(ctx context.Context, message []byte) error {
-	// Implementation depends on message format and intended action
-	// This is a placeholder
+	// Implement message consumption logic here
+	// This is just a placeholder implementation
+	// Parse the message
+
+	// Example:
+	var consumeMsg ConsumeMessage
+	if err := json.Unmarshal(message, &consumeMsg); err != nil {
+		return fmt.Errorf("failed to unmarshal consume message: %w", err)
+	}
+
+	// Process the message
 	log.Info().
 		Str("crawler", c.Config.Name).
-		Msg("Consuming message")
+		Str("message_id", consumeMsg.MessageID).
+		Msg("Processing consume message")
 
-	// Actual implementation would be specific to the application
-	return errors.New("Consume not implemented")
+	// Extract the JSON payload
+	if consumeMsg.Type == "extract" {
+		var extractMsg messaging.ExtractRunMessage
+		if err := json.Unmarshal(consumeMsg.Payload, &extractMsg); err != nil {
+			return fmt.Errorf("failed to unmarshal extract message: %w", err)
+		}
+
+		// Fill in data source if not provided
+		if extractMsg.DataSourceID == "" {
+			extractMsg.DataSourceID = c.Config.DataSource.ID
+		}
+
+		// Process the extraction
+		// ...
+	}
+
+	return nil
 }
 
 // ExtractElements is a stub that must be implemented by concrete crawlers

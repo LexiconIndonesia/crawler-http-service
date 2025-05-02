@@ -9,6 +9,7 @@ import (
 
 	"github.com/adryanev/go-http-service-template/common"
 	crawler "github.com/adryanev/go-http-service-template/crawlers"
+	"github.com/adryanev/go-http-service-template/repository"
 	"github.com/go-rod/rod"
 	"github.com/rs/zerolog/log"
 )
@@ -19,8 +20,8 @@ type CrawlerAdapter struct {
 }
 
 // NewCrawlerAdapter creates a new adapter for the LKPP Blacklist crawler
-func NewCrawlerAdapter(service crawler.CrawlerService) *CrawlerAdapter {
-	config := crawler.NewCrawlerConfig(common.LKPPBlacklist, CRAWLER_DOMAIN)
+func NewCrawlerAdapter(service crawler.CrawlerService, dataSource repository.DataSource) *CrawlerAdapter {
+	config := crawler.NewCrawlerConfig(common.LKPPBlacklist, dataSource)
 	baseCrawler := crawler.NewBaseCrawler(config, service)
 
 	// Set custom browser options
@@ -161,7 +162,7 @@ func (c *CrawlerAdapter) CrawlByKeyword(ctx context.Context, keyword string) err
 
 	// Form the search URL with the given keyword
 	searchURL := fmt.Sprintf("https://%s/daftar-hitam/pencarian?q=%s",
-		CRAWLER_DOMAIN, keyword)
+		c.Config.DataSource.BaseUrl.String, keyword)
 
 	// Navigate to search URL
 	page, err := c.Navigate(ctx, searchURL)
