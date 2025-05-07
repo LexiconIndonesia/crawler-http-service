@@ -5,17 +5,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common/db"
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/common/utils"
+	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog/log"
-
-	"github.com/adryanev/go-http-service-template/common/db"
-	"github.com/adryanev/go-http-service-template/common/messaging"
-	"github.com/adryanev/go-http-service-template/common/utils"
-	"github.com/adryanev/go-http-service-template/common/worker"
-	crawler "github.com/adryanev/go-http-service-template/crawlers"
-	"github.com/adryanev/go-http-service-template/repository"
 )
 
 // ApiService provides API endpoints for the module
@@ -472,38 +469,38 @@ func (s *ApiService) cancelExtractorJob(w http.ResponseWriter, r *http.Request) 
 	// This relies on the main.go modification to make the extractor worker globally accessible
 
 	// Access the crawler service through dependency injection
-	_, ok := s.services["crawler"].(crawler.CrawlerService)
-	if !ok {
-		log.Error().Msg("Crawler service not available")
-		utils.WriteError(w, http.StatusInternalServerError, "Crawler service not available")
-		return
-	}
+	// _, ok := s.services["crawler"].(crawler.CrawlerService)
+	// if !ok {
+	// 	log.Error().Msg("Crawler service not available")
+	// 	utils.WriteError(w, http.StatusInternalServerError, "Crawler service not available")
+	// 	return
+	// }
 
-	// Get the extractor worker manager
-	extractorManager, ok := s.services["extractor"].(worker.Worker)
-	if !ok {
-		log.Error().Msg("Extractor worker manager not available")
-		utils.WriteError(w, http.StatusInternalServerError, "Extractor worker manager not available")
-		return
-	}
+	// // Get the extractor worker manager
+	// extractorManager, ok := s.services["extractor"].(worker.Worker)
+	// if !ok {
+	// 	log.Error().Msg("Extractor worker manager not available")
+	// 	utils.WriteError(w, http.StatusInternalServerError, "Extractor worker manager not available")
+	// 	return
+	// }
 
-	// Cancel the job
-	err := extractorManager.CancelJob(worker.JobID(req.JobID))
-	if err != nil {
-		log.Error().Err(err).Str("job_id", req.JobID).Msg("Failed to cancel extractor job")
-		if err.Error() == "job not found: "+req.JobID {
-			utils.WriteError(w, http.StatusNotFound, "Job not found")
-			return
-		}
-		utils.WriteError(w, http.StatusInternalServerError, "Failed to cancel job")
-		return
-	}
+	// // Cancel the job
+	// err := extractorManager.CancelJob(worker.JobID(req.JobID))
+	// if err != nil {
+	// 	log.Error().Err(err).Str("job_id", req.JobID).Msg("Failed to cancel extractor job")
+	// 	if err.Error() == "job not found: "+req.JobID {
+	// 		utils.WriteError(w, http.StatusNotFound, "Job not found")
+	// 		return
+	// 	}
+	// 	utils.WriteError(w, http.StatusInternalServerError, "Failed to cancel job")
+	// 	return
+	// }
 
-	// Log the action
-	log.Info().
-		Str("job_id", req.JobID).
-		Str("user", r.Header.Get("X-API-USER")).
-		Msg("Extractor job cancelled")
+	// // Log the action
+	// log.Info().
+	// 	Str("job_id", req.JobID).
+	// 	Str("user", r.Header.Get("X-API-USER")).
+	// 	Msg("Extractor job cancelled")
 
 	// Return success
 	utils.WriteMessage(w, http.StatusOK, "Job cancelled successfully")

@@ -3,9 +3,9 @@ package module
 import (
 	"net/http"
 
-	"github.com/adryanev/go-http-service-template/common/db"
-	"github.com/adryanev/go-http-service-template/common/logger"
-	"github.com/adryanev/go-http-service-template/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/common/db"
+	"github.com/LexiconIndonesia/crawler-http-service/common/logger"
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/go-chi/chi/v5"
 )
 

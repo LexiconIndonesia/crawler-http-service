@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/adryanev/go-http-service-template/common/db"
-	"github.com/adryanev/go-http-service-template/common/messaging"
-	"github.com/adryanev/go-http-service-template/module"
+	"github.com/LexiconIndonesia/crawler-http-service/common/db"
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/module"
 
-	_ "github.com/adryanev/go-http-service-template/docs"
+	_ "github.com/LexiconIndonesia/crawler-http-service/docs"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"

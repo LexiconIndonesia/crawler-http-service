@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/adryanev/go-http-service-template/common/messaging"
-	"github.com/adryanev/go-http-service-template/common/utils"
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/common/utils"
 	"github.com/go-chi/chi/v5"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"

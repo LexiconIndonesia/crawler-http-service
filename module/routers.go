@@ -3,7 +3,7 @@ package module
 import (
 	"net/http"
 
-	"github.com/adryanev/go-http-service-template/common/utils"
+	"github.com/LexiconIndonesia/crawler-http-service/common/utils"
 
 	"github.com/go-chi/chi/v5"
 )
