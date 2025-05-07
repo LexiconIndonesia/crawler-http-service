@@ -18,10 +18,36 @@ func NewCrawlerFactory(broker MessageBroker) *CrawlerFactory {
 	}
 }
 
+// CrawlerCreator is a function type for creating crawlers
+type CrawlerCreator func(config DataSourceConfig, baseConfig BaseCrawlerConfig, broker MessageBroker) (Crawler, error)
+
 // CreateCrawler creates a crawler based on data source type and config
 func (f *CrawlerFactory) CreateCrawler(ctx context.Context, dataSourceType string, configType string, configData json.RawMessage) (Crawler, error) {
-	// Not implemented as per requirements
-	return nil, fmt.Errorf("CreateCrawler method not implemented for type: %s", dataSourceType)
+	// Load the configuration based on the config type
+	sourceConfig, err := LoadDataSourceConfig(configData, configType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Validate the configuration
+	if err := sourceConfig.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid config: %w", err)
+	}
+
+	// Create base crawler config
+	baseConfig := DefaultBaseCrawlerConfig()
+	baseConfig.DataSourceID = dataSourceType
+
+	// Dynamically get the crawler creator function
+	// This approach avoids import cycles by using dependency injection
+	crawlerRegistry := GetCrawlerRegistry()
+	creator, exists := crawlerRegistry[dataSourceType]
+
+	if !exists {
+		return nil, fmt.Errorf("unsupported data source type: %s", dataSourceType)
+	}
+
+	return creator(sourceConfig, baseConfig, f.MessageBroker)
 }
 
 // ScraperFactory creates scrapers based on data source type

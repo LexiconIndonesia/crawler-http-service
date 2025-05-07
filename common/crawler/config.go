@@ -54,6 +54,25 @@ func (c ElitigationSGConfig) Validate() error {
 	return nil
 }
 
+// LKPPBlacklistConfig represents configuration for LKPP Blacklist
+type LKPPBlacklistConfig struct {
+	BaseConfig
+	BaseURL         string `json:"base_url"`
+	SearchFormURL   string `json:"search_form_url"`
+	CompanySelector string `json:"company_selector"`
+}
+
+// Validate validates the LKPPBlacklistConfig
+func (c LKPPBlacklistConfig) Validate() error {
+	if c.BaseURL == "" {
+		return errors.New("base URL is required")
+	}
+	if c.CompanySelector == "" {
+		return errors.New("company selector is required")
+	}
+	return nil
+}
+
 // LoadDataSourceConfig loads a data source config based on the config type
 func LoadDataSourceConfig(raw json.RawMessage, configType string) (DataSourceConfig, error) {
 	switch configType {
@@ -67,6 +86,12 @@ func LoadDataSourceConfig(raw json.RawMessage, configType string) (DataSourceCon
 		var c ElitigationSGConfig
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal elitigation config: %w", err)
+		}
+		return c, nil
+	case "lkpp_blacklist":
+		var c LKPPBlacklistConfig
+		if err := json.Unmarshal(raw, &c); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal lkpp_blacklist config: %w", err)
 		}
 		return c, nil
 	default:
