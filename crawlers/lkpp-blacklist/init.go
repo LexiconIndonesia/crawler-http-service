@@ -2,26 +2,21 @@ package lkpp_blacklist
 
 import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/repository"
 )
 
 // init registers the LKPP blacklist crawler with the crawler registry
 func init() {
 	// Register the LKPP blacklist crawler creator function
-	crawler.RegisterCrawler("lkpp_blacklist", CreateLKPPBlacklistCrawler)
+	crawler.RegisterCrawler("lkpp-blacklist", CreateLKPPBlacklistCrawler)
 }
 
 // CreateLKPPBlacklistCrawler creates a LKPP blacklist crawler
-func CreateLKPPBlacklistCrawler(config crawler.DataSourceConfig, baseConfig crawler.BaseCrawlerConfig, broker crawler.MessageBroker) (crawler.Crawler, error) {
-	// First check if we have a specific LKPPBlacklistConfig
-	lkppConfig, ok := config.(LKPPBlacklistConfig)
-	if ok {
-		// If we have a specific config, use it
-		return NewLKPPBlacklistCrawler(lkppConfig, baseConfig, broker)
-	}
+func CreateLKPPBlacklistCrawler(dataSource repository.DataSource, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (crawler.Crawler, error) {
 
-	// If not, create a default config
-	// We can't directly convert from another config type, so we'll create a new one with defaults
-	lkppConfig = LKPPBlacklistConfig{
+	// TODO: Create the real config
+	lkppConfig := LKPPBlacklistConfig{
 		BaseConfig: crawler.BaseConfig{
 			PaginationSelector: ".pagination",
 			DetailLinkSelector: ".detail-link",

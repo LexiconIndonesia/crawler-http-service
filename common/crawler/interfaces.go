@@ -30,10 +30,10 @@ type Crawler interface {
 	Consume(ctx context.Context, message []byte) error
 
 	// ExtractElements extracts URL frontiers from a page
-	ExtractElements(ctx context.Context, page *rod.Page) ([]repository.UrlFrontier, error)
+	ExtractElements(ctx context.Context, page *rod.Element) (repository.UrlFrontier, error)
 
-	// Navigate navigates to a URL and returns the page
-	Navigate(ctx context.Context, url string) (*rod.Page, error)
+	// Crawl a page
+	CrawlPage(ctx context.Context, page *rod.Page, url string) error
 }
 
 // Scraper defines the interface for web scraping operations

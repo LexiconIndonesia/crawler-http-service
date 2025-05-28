@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/common/models"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
@@ -36,7 +37,7 @@ func DefaultBaseScraperConfig() BaseScraperConfig {
 type BaseScraper struct {
 	Config        BaseScraperConfig
 	Browser       *rod.Browser
-	MessageBroker MessageBroker
+	MessageBroker messaging.MessageBroker
 }
 
 // Setup initializes the scraper

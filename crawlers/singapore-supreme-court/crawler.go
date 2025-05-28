@@ -2,281 +2,241 @@ package singapore_supreme_court
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
-	"net/url"
-	"time"
+	stdUrl "net/url"
+	"regexp"
+	"strconv"
+	"sync"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
 	"github.com/rs/zerolog/log"
+	"github.com/samber/lo"
 )
 
-// ELitigationCrawler is a crawler for the Singapore E-Litigation system
-type ELitigationCrawler struct {
+// SingaporeSupremeCourtCrawler is a crawler for the Singapore E-Litigation system
+type SingaporeSupremeCourtCrawler struct {
 	crawler.BaseCrawler
-	Config       crawler.ElitigationSGConfig
-	httpClient   *http.Client
-	apiEndpoint  string
-	defaultDelay time.Duration
+	Config  crawler.SingaporeSupremeCourtConfig
+	browser *rod.Browser
 }
 
-// NewELitigationCrawler creates a new ELitigationCrawler
-func NewELitigationCrawler(config crawler.ElitigationSGConfig, baseConfig crawler.BaseCrawlerConfig, broker crawler.MessageBroker) (*ELitigationCrawler, error) {
-	// Set up HTTP client with reasonable defaults
-	httpClient := &http.Client{
-		Timeout: baseConfig.RequestTimeout,
-	}
+// NewELitigationCrawler creates a new SingaporeSupremeCourtCrawler
+func NewSingaporeSupremeCourtCrawler(config crawler.SingaporeSupremeCourtConfig, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (*SingaporeSupremeCourtCrawler, error) {
 
 	// Create the crawler
-	return &ELitigationCrawler{
+	return &SingaporeSupremeCourtCrawler{
 		BaseCrawler: crawler.BaseCrawler{
 			Config:        baseConfig,
 			MessageBroker: broker,
 		},
-		Config:       config,
-		httpClient:   httpClient,
-		apiEndpoint:  "https://api.elitigation.sg/api/v1", // Example endpoint
-		defaultDelay: time.Duration(config.Delay) * time.Millisecond,
+		Config: config,
 	}, nil
 }
 
 // Setup initializes the crawler
-func (c *ELitigationCrawler) Setup(ctx context.Context) error {
-	log.Info().Msg("Setting up E-Litigation crawler")
-	// No browser setup needed for API-based crawler
+func (c *SingaporeSupremeCourtCrawler) Setup(ctx context.Context) error {
+	log.Info().Msgf("Setting Up Singapore Supreme Court crawler")
+	browser := rod.New()
+
+	err := browser.Connect()
+	if err != nil {
+		log.Err(err).Msgf("Error connecting to browser")
+		return err
+	}
+
+	c.browser = browser
 	return nil
+
 }
 
 // Teardown cleans up resources
-func (c *ELitigationCrawler) Teardown(ctx context.Context) error {
-	log.Info().Msg("Tearing down E-Litigation crawler")
-	// No browser cleanup needed for API-based crawler
+func (c *SingaporeSupremeCourtCrawler) Teardown(ctx context.Context) error {
+	log.Info().Msg("Tearing down Singapore Supreme Court crawler")
+	err := c.browser.Close()
+	if err != nil {
+		log.Err(err).Msgf("Error closing browser")
+		return err
+	}
 	return nil
 }
 
 // CrawlAll crawls all available judgments
-func (c *ELitigationCrawler) CrawlAll(ctx context.Context) error {
-	log.Info().Msg("Crawling all E-Litigation judgments")
-	// Example implementation - not actually functional
-	// This would use the API to fetch data
+func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
+	log.Info().Msg("Crawling all judgments")
+	startUrl, err := newStartUrlCrawler(c.BaseCrawler.Config, c.Config)
 
-	// Here we would:
-	// 1. Make API requests to get judgment lists
-	// 2. Process each page of results
-	// 3. Save frontiers for detailed processing by scrapers
+	if err != nil {
+		log.Err(err).Msg("Error creating URL crawler")
+		return err
+	}
 
-	return crawler.ErrNotImplemented
+	pagePool := rod.NewPagePool(7)
+	defer pagePool.Cleanup(func(p *rod.Page) {
+		err := p.Close()
+		if err != nil {
+			log.Error().Err(err).Msg("Error closing page")
+		}
+	})
+
+	rpLast := c.browser.MustPage()
+	defer rpLast.Close()
+	lastPage, err := getLastPage(ctx, rpLast, startUrl.constructUrl())
+	if err != nil {
+		return fmt.Errorf("failed to get last page: %w", err)
+	}
+
+	lastPageInt, totalResult := lastPage.Unpack()
+
+	log.Info().Msg("Total result: " + strconv.Itoa(totalResult))
+
+	urlList := generateUrls(startUrl, startUrl.currentPage, lastPageInt)
+
+	chunks := lo.Chunk(urlList, 7)
+
+	var crawlErrors []error
+	errChan := make(chan error, len(urlList)) // Channel to collect errors
+
+	// Create a new context with cancellation
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel() // Ensure all resources are cleaned up
+
+	for _, urls := range chunks {
+		// Check if context is cancelled before starting new chunk
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		wg := sync.WaitGroup{}
+
+		// Process all URLs in the chunk concurrently
+		for _, url := range urls {
+			wg.Add(1)
+			go func(url string) {
+				defer wg.Done()
+
+				// Create a new context for this goroutine
+				select {
+				case <-ctx.Done():
+					errChan <- ctx.Err()
+					return
+				default:
+					if err := c.crawlingJob(&pagePool, ctx, url); err != nil {
+						errChan <- fmt.Errorf("error crawling %s: %w", url, err)
+						// Optional: cancel other goroutines if you want to stop on first error
+						// cancel()
+					}
+				}
+			}(url)
+		}
+
+		go func() {
+			wg.Wait()
+			close(errChan)
+		}()
+	}
+
+	// Collect any errors that occurred
+	for err := range errChan {
+		if err != nil {
+			if err == context.Canceled {
+				return fmt.Errorf("crawling was cancelled: %w", err)
+			}
+			crawlErrors = append(crawlErrors, err)
+		}
+	}
+
+	// If there were any errors, return them combined
+	if len(crawlErrors) > 0 {
+		return fmt.Errorf("encountered %d errors during crawling: %v", len(crawlErrors), crawlErrors)
+	}
+
+	return nil
 }
 
 // CrawlByKeyword crawls judgments by keyword
-func (c *ELitigationCrawler) CrawlByKeyword(ctx context.Context, keyword string) error {
-	log.Info().Str("keyword", keyword).Msg("Crawling E-Litigation judgments by keyword")
-
-	// Build search parameters
-	params := SearchParams{
-		Keyword:    keyword,
-		StartDate:  time.Now().AddDate(-1, 0, 0).Format("2006-01-02"), // Last year
-		EndDate:    time.Now().Format("2006-01-02"),                   // Today
-		PageNumber: 1,
-		PageSize:   50,
-	}
-
-	// This would make API requests with the search parameters
-	// Using the params in a real implementation
-	log.Debug().Interface("params", params).Msg("Search parameters")
+func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keyword string) error {
+	log.Info().Str("keyword", keyword).Msg("Crawling judgments by keyword")
 
 	return crawler.ErrNotImplemented
 }
 
 // CrawlByURL crawls a specific URL
-func (c *ELitigationCrawler) CrawlByURL(ctx context.Context, url string) error {
-	log.Info().Str("url", url).Msg("Crawling specific E-Litigation URL")
-
-	// Parse the URL to extract judgment ID
-	parsedURL, err := parseJudgmentURL(url)
-	if err != nil {
-		log.Error().Err(err).Str("url", url).Msg("Failed to parse judgment URL")
-		return err
-	}
-
-	// Create HTTP request to retrieve judgment data
-	req, err := http.NewRequestWithContext(ctx, "GET", parsedURL.String(), nil)
-	if err != nil {
-		log.Error().Err(err).Str("url", parsedURL.String()).Msg("Failed to create HTTP request")
-		return err
-	}
-
-	// Add authentication and headers if needed
-	req.Header.Add("User-Agent", c.BaseCrawler.Config.UserAgent)
-	if c.Config.APIToken != "" {
-		req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.Config.APIToken))
-	}
-	req.Header.Add("Content-Type", "application/json")
-
-	// Make the request
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		log.Error().Err(err).Str("url", parsedURL.String()).Msg("Failed to execute HTTP request")
-		return err
-	}
-	defer resp.Body.Close()
-
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("API request failed with status: %d", resp.StatusCode)
-	}
-
-	// Process the response and create URL frontier
-	var judgmentData map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&judgmentData); err != nil {
-		log.Error().Err(err).Msg("Failed to decode judgment data")
-		return err
-	}
-
-	// Convert the judgment data to JSON for metadata
-	metadataBytes, err := json.Marshal(judgmentData)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal judgment data to JSON")
-		return err
-	}
-
-	// Parse domain from URL
-	domain := parsedURL.Host
-
-	// Create a frontier for the detailed scraping
-	frontier := repository.UrlFrontier{
-		ID:           c.GenerateID(),
-		DataSourceID: c.BaseCrawler.Config.DataSourceID,
-		Domain:       domain,
-		Url:          url,
-		Status:       0, // UrlFrontierStatusPending = 0
-		Metadata:     metadataBytes,
-		CreatedAt:    time.Now(),
-	}
-
-	// Convert to message and publish
-	msg, err := json.Marshal(frontier)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal frontier to JSON")
-		return err
-	}
-
-	if c.MessageBroker != nil {
-		if err := c.MessageBroker.Publish(ctx, "frontiers.singapore", msg); err != nil {
-			log.Error().Err(err).Msg("Failed to publish frontier to message broker")
-			return err
-		}
-	}
-
-	log.Info().Str("judgment_id", getJudgmentID(judgmentData)).Str("url", url).Msg("Successfully crawled judgment URL")
+func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url string) error {
 	return nil
 }
 
-// Helper function to parse the judgment URL
-func parseJudgmentURL(urlString string) (*url.URL, error) {
-	parsedURL, err := url.Parse(urlString)
-	if err != nil {
-		return nil, err
-	}
-
-	// Add additional validation specific to Singapore E-Litigation URLs
-	if !isValidELitigationURL(parsedURL) {
-		return nil, fmt.Errorf("not a valid E-Litigation URL: %s", urlString)
-	}
-
-	return parsedURL, nil
-}
-
-// Helper function to validate E-Litigation URLs
-func isValidELitigationURL(parsedURL *url.URL) bool {
-	// Example validation logic - replace with actual validation
-	return parsedURL.Host == "www.elitigation.sg" ||
-		parsedURL.Host == "elitigation.sg" ||
-		parsedURL.Host == "api.elitigation.sg"
-}
-
-// Helper function to extract judgment ID from judgment data
-func getJudgmentID(data map[string]interface{}) string {
-	if id, ok := data["id"].(string); ok {
-		return id
-	}
-	if id, ok := data["judgmentId"].(string); ok {
-		return id
-	}
-	return "unknown"
-}
-
-// ExtractElements extracts URL frontiers from a page
-// Note: For API-based crawlers, this might operate on API responses instead of HTML pages
-func (c *ELitigationCrawler) ExtractElements(ctx context.Context, page *rod.Page) ([]repository.UrlFrontier, error) {
+func (c *SingaporeSupremeCourtCrawler) ExtractElements(ctx context.Context, page *rod.Element) (repository.UrlFrontier, error) {
 	log.Info().Msg("Extracting elements from E-Litigation page")
 
 	// In a real implementation, this would extract URLs or IDs from API responses
 
-	return nil, crawler.ErrNotImplemented
+	return repository.UrlFrontier{}, crawler.ErrNotImplemented
 }
 
-// Navigate navigates to a URL
-// Note: For API-based crawlers, this might not be needed
-func (c *ELitigationCrawler) Navigate(ctx context.Context, targetURL string) (*rod.Page, error) {
-	log.Info().Str("url", targetURL).Msg("Navigating to E-Litigation URL")
+func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.Page, url string) error {
+	log.Info().Str("url", url).Msg("Navigating to E-Litigation URL")
+	log.Info().Msg("Crawling URL: " + url)
 
-	// This might be replaced with an API call for API-based crawlers
+	// Check context before starting
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
 
-	return nil, crawler.ErrNotImplemented
-}
-
-// makeAPIRequest makes an API request to the E-Litigation API
-func (c *ELitigationCrawler) makeAPIRequest(endpoint string, params url.Values) ([]byte, error) {
-	// Build the request URL
-	reqURL := fmt.Sprintf("%s/%s?%s", c.apiEndpoint, endpoint, params.Encode())
-
-	// Create the request
-	req, err := http.NewRequest("GET", reqURL, nil)
+	rpCtx := page.Context(ctx)
+	wait := rpCtx.MustWaitNavigation()
+	err := rpCtx.Navigate(url)
 	if err != nil {
-		return nil, err
+		log.Error().Err(err).Msg("Error navigating to url")
+		return err
+	}
+	wait()
+
+	// Check context after navigation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
 	}
 
-	// Add authentication
-	req.Header.Add("Authorization", fmt.Sprintf("Bearer %s", c.Config.APIToken))
-	req.Header.Add("Content-Type", "application/json")
+	page = rpCtx.MustWaitStable()
 
-	// Make the request
-	resp, err := c.httpClient.Do(req)
+	elements, err := page.Elements("#listview > div.row > div.card.col-12")
 	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	// Check status code
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status: %d", resp.StatusCode)
+		log.Error().Err(err).Msg("Error getting elements")
+		return err
 	}
 
-	// Read the response body
-	var respBody []byte
-	_, err = resp.Body.Read(respBody)
-	if err != nil {
-		return nil, err
+	log.Info().Msgf("Found %d elements", len(elements))
+
+	detailUrls := []repository.UrlFrontier{}
+	for _, element := range elements {
+
+		crawlerResult, err := c.ExtractElements(ctx, element)
+
+		if err != nil {
+			log.Error().Err(err).Msg("Error getting element content")
+			continue
+		}
+
+		detailUrls = append(detailUrls, crawlerResult)
+		log.Info().Msg("Crawler result: " + crawlerResult.Url)
 	}
 
-	return respBody, nil
-}
+	log.Info().Msgf("Crawling url: %s done!", url)
+	return nil
 
-// parseJudgmentList parses a list of judgments from API response
-func (c *ELitigationCrawler) parseJudgmentList(data []byte) ([]JudgmentItem, error) {
-	var items []JudgmentItem
-	if err := json.Unmarshal(data, &items); err != nil {
-		return nil, err
-	}
-	return items, nil
+	return nil
 }
 
 // Consume processes a message from a queue
-func (c *ELitigationCrawler) Consume(ctx context.Context, message []byte) error {
+func (c *SingaporeSupremeCourtCrawler) Consume(ctx context.Context, message []byte) error {
 	log.Info().Msg("Processing E-Litigation message from queue")
 
 	// In a real implementation, this would:
@@ -285,4 +245,98 @@ func (c *ELitigationCrawler) Consume(ctx context.Context, message []byte) error 
 	// 3. Create URL frontiers or perform other actions
 
 	return crawler.ErrNotImplemented
+}
+
+func (c *SingaporeSupremeCourtCrawler) createPage() (*rod.Page, error) {
+	incognito, err := c.browser.Incognito()
+	if err != nil {
+		log.Error().Err(err).Msg("Error creating incognito page")
+		return nil, err
+	}
+
+	return incognito.MustPage(), nil
+
+}
+
+func (c *SingaporeSupremeCourtCrawler) crawlingJob(pagePool *rod.Pool[rod.Page], ctx context.Context, urlPage string) error {
+	page, err := pagePool.Get(c.createPage)
+	if err != nil {
+		log.Error().Err(err).Msg("Error getting page")
+		return err
+	}
+	defer pagePool.Put(page)
+	return c.CrawlPage(ctx, page, urlPage)
+}
+
+func getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, int], error) {
+	lastPage := 0
+
+	if err := rp.Context(ctx).Navigate(url); err != nil {
+		if err == context.Canceled {
+			return lo.Tuple2[int, int]{}, err
+		}
+		log.Error().Err(err).Msg("Error navigating to url")
+		return lo.Tuple2[int, int]{}, err
+	}
+	totalResult := 0
+	totalResultElement, err := rp.Element("#listview > div.row.justify-content-between.align-items-center > div.gd-csummary")
+	if err != nil {
+		log.Error().Err(err).Msg("Error getting total result element")
+		return lo.Tuple2[int, int]{}, err
+	}
+	res, err := totalResultElement.HTML()
+	if err != nil {
+		log.Error().Err(err).Msg("Error getting total result element")
+		return lo.Tuple2[int, int]{}, err
+	}
+	totalResult, err = strconv.Atoi(regexp.MustCompile(`\d+`).FindString(res))
+	if err != nil {
+		log.Error().Err(err).Msg("Error converting total result to integer")
+		return lo.Tuple2[int, int]{}, err
+	}
+
+	elements, err := rp.Elements("#listview > div.row.justify-content-end > div > ul > li.page-item.page-link> a")
+	if err != nil {
+		log.Error().Err(err).Msg("Error getting elements")
+		return lo.Tuple2[int, int]{}, err
+	}
+	for _, element := range elements {
+		if element.MustHTML() == "" {
+			continue
+		}
+		href := element.MustAttribute("href")
+		if href == nil {
+			continue
+		}
+		u, err := stdUrl.Parse(*href)
+		if err != nil {
+			log.Error().Err(err).Msg("Error parsing URL")
+			continue
+		}
+		lp := u.Query().Get("CurrentPage")
+		lpInt, err := strconv.Atoi(lp)
+		if err != nil {
+			log.Error().Err(err).Msg("Error converting LP to integer")
+			continue
+		}
+		if lastPage < lpInt {
+			lastPage = lpInt
+		}
+	}
+
+	return lo.Tuple2[int, int]{
+		A: lastPage,
+		B: totalResult,
+	}, nil
+
+}
+
+func isDetailPage(link string) bool {
+	checker, err := regexp.Compile("/gd/s")
+	if err != nil {
+		log.Error().Err(err).Msg("Regex Compile Error")
+		return false
+	}
+
+	return checker.MatchString(link)
 }

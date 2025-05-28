@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
 	"github.com/rs/zerolog/log"
@@ -40,7 +41,7 @@ type LKPPBlacklistCrawler struct {
 }
 
 // NewLKPPBlacklistCrawler creates a new LKPPBlacklistCrawler
-func NewLKPPBlacklistCrawler(config LKPPBlacklistConfig, baseConfig crawler.BaseCrawlerConfig, broker crawler.MessageBroker) (*LKPPBlacklistCrawler, error) {
+func NewLKPPBlacklistCrawler(config LKPPBlacklistConfig, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (*LKPPBlacklistCrawler, error) {
 	// Set up HTTP client
 	httpClient := &http.Client{
 		Timeout: baseConfig.RequestTimeout,
@@ -133,21 +134,21 @@ func (c *LKPPBlacklistCrawler) Consume(ctx context.Context, message []byte) erro
 }
 
 // ExtractElements extracts URL frontiers from a page
-func (c *LKPPBlacklistCrawler) ExtractElements(ctx context.Context, page *rod.Page) ([]repository.UrlFrontier, error) {
+func (c *LKPPBlacklistCrawler) ExtractElements(ctx context.Context, page *rod.Element) (repository.UrlFrontier, error) {
 	log.Info().Msg("Extracting elements from LKPP blacklist page")
 
 	// In a real implementation, this would:
 	// 1. Extract company details from the page
 	// 2. Create URL frontiers for each company
 
-	return nil, crawler.ErrNotImplemented
+	return repository.UrlFrontier{}, crawler.ErrNotImplemented
 }
 
 // Navigate navigates to a URL
-func (c *LKPPBlacklistCrawler) Navigate(ctx context.Context, url string) (*rod.Page, error) {
-	log.Info().Str("url", url).Msg("Navigating to LKPP blacklist URL")
+func (c *LKPPBlacklistCrawler) CrawlPage(ctx context.Context, page *rod.Page, url string) error {
+	log.Info().Msg("Navigating to LKPP blacklist URL")
 
 	// In a real implementation, this would use the browser to navigate to the URL
 
-	return nil, crawler.ErrNotImplemented
+	return nil
 }

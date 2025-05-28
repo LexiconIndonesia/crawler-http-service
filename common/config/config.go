@@ -1,4 +1,4 @@
-package main
+package config
 
 import (
 	"fmt"
@@ -119,6 +119,7 @@ func (c *natsConfig) loadFromEnv() {
 	c.URL = getEnv("NATS_URL", "nats://localhost:4222")
 	c.Username = getEnv("NATS_USERNAME", "")
 	c.Password = getEnv("NATS_PASSWORD", "")
+
 }
 
 func defaultNatsConfig() natsConfig {
@@ -146,28 +147,60 @@ func defaultSecurityConfig() securityConfig {
 	}
 }
 
-type config struct {
+type redisConfig struct {
+	Host     string `json:"host"`
+	Port     uint   `json:"port"`
+	Password string `json:"password"`
+	DB       int    `json:"db"`
+}
+
+func (r *redisConfig) loadFromEnv() {
+	loadEnvString("REDIS_HOST", &r.Host)
+	loadEnvUint("REDIS_PORT", &r.Port)
+	loadEnvString("REDIS_PASSWORD", &r.Password)
+
+	// Load DB number with a default of 0
+	if dbStr := getEnv("REDIS_DB", "0"); dbStr != "" {
+		if db, err := strconv.Atoi(dbStr); err == nil {
+			r.DB = db
+		}
+	}
+}
+
+func defaultRedisConfig() redisConfig {
+	return redisConfig{
+		Host:     "localhost",
+		Port:     6379,
+		Password: "",
+		DB:       0,
+	}
+}
+
+type Config struct {
 	Host     hostConfig
 	Listen   listenConfig
 	PgSql    pgSqlConfig
 	Security securityConfig
 	Nats     natsConfig
+	Redis    redisConfig
 }
 
-func (c *config) loadFromEnv() {
+func (c *Config) LoadFromEnv() {
 	c.Host.loadFromEnv()
 	c.Listen.loadFromEnv()
 	c.PgSql.loadFromEnv()
 	c.Security.loadFromEnv()
 	c.Nats.loadFromEnv()
+	c.Redis.loadFromEnv()
 }
 
-func defaultConfig() config {
-	return config{
+func DefaultConfig() Config {
+	return Config{
 		Host:     defaultHostConfig(),
 		Listen:   defaultListenConfig(),
 		PgSql:    defaultPgSql(),
 		Security: defaultSecurityConfig(),
 		Nats:     defaultNatsConfig(),
+		Redis:    defaultRedisConfig(),
 	}
 }

@@ -90,7 +90,7 @@ type ExampleCourtCrawler struct {
     Utils  *crawler.RodUtils
 }
 
-func NewExampleCourtCrawler(config crawler.ExampleCourtConfig, baseConfig crawler.BaseCrawlerConfig, broker crawler.MessageBroker) (*ExampleCourtCrawler, error) {
+func NewExampleCourtCrawler(config crawler.ExampleCourtConfig, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (*ExampleCourtCrawler, error) {
     return &ExampleCourtCrawler{
         BaseCrawler: crawler.BaseCrawler{
             Config:        baseConfig,
@@ -128,7 +128,7 @@ type ExampleCourtScraper struct {
     Utils  *crawler.RodUtils
 }
 
-func NewExampleCourtScraper(config crawler.ExampleCourtConfig, baseConfig crawler.BaseScraperConfig, broker crawler.MessageBroker) (*ExampleCourtScraper, error) {
+func NewExampleCourtScraper(config crawler.ExampleCourtConfig, baseConfig crawler.BaseScraperConfig, broker messaging.MessageBroker) (*ExampleCourtScraper, error) {
     return &ExampleCourtScraper{
         BaseScraper: crawler.BaseScraper{
             Config:        baseConfig,

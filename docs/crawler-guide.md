@@ -126,7 +126,7 @@ type YourNewSourceCrawler struct {
 }
 
 // NewYourNewSourceCrawler creates a new YourNewSourceCrawler
-func NewYourNewSourceCrawler(config crawler.YourNewSourceConfig, baseConfig crawler.BaseCrawlerConfig, broker crawler.MessageBroker) (*YourNewSourceCrawler, error) {
+func NewYourNewSourceCrawler(config crawler.YourNewSourceConfig, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (*YourNewSourceCrawler, error) {
     return &YourNewSourceCrawler{
         BaseCrawler: crawler.BaseCrawler{
             Config:        baseConfig,
@@ -189,7 +189,7 @@ type YourNewSourceScraper struct {
 }
 
 // NewYourNewSourceScraper creates a new YourNewSourceScraper
-func NewYourNewSourceScraper(config crawler.YourNewSourceConfig, baseConfig crawler.BaseScraperConfig, broker crawler.MessageBroker) (*YourNewSourceScraper, error) {
+func NewYourNewSourceScraper(config crawler.YourNewSourceConfig, baseConfig crawler.BaseScraperConfig, broker messaging.MessageBroker) (*YourNewSourceScraper, error) {
     return &YourNewSourceScraper{
         BaseScraper: crawler.BaseScraper{
             Config:        baseConfig,

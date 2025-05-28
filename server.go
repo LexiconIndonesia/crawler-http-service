@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common/config"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/module"
@@ -20,13 +21,13 @@ import (
 
 type AppHttpServer struct {
 	router     *chi.Mux
-	cfg        config
+	cfg        config.Config
 	server     *http.Server
 	db         *db.DB
 	natsClient *messaging.NatsClient
 }
 
-func NewAppHttpServer(cfg config) (*AppHttpServer, error) {
+func NewAppHttpServer(cfg config.Config) (*AppHttpServer, error) {
 	r := chi.NewRouter()
 
 	// Basic CORS

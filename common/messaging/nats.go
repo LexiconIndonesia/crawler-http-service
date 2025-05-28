@@ -6,65 +6,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/LexiconIndonesia/crawler-http-service/common/config"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
 
-// Config represents the configuration for the NATS client
-type Config struct {
-	URL                 string
-	Username            string
-	Password            string
-	ConnectionTimeout   time.Duration
-	ConnectionName      string
-	MaxReconnects       int
-	ReconnectWait       time.Duration
-	ReconnectBufferSize int
-}
-
-// DefaultConfig returns a default configuration for the NATS client
-func DefaultConfig() Config {
-	return Config{
-		URL:                 "nats://localhost:4222",
-		Username:            "",
-		Password:            "",
-		ConnectionTimeout:   10 * time.Second,
-		ConnectionName:      fmt.Sprintf("go-http-service-%s", uuid.New().String()[:8]),
-		MaxReconnects:       5,
-		ReconnectWait:       1 * time.Second,
-		ReconnectBufferSize: 5 * 1024 * 1024, // 5MB
-	}
-}
-
 // NatsClient represents a NATS client
 type NatsClient struct {
 	conn        *nats.Conn
 	js          jetstream.JetStream
-	config      Config
+	config      config.Config
 	subscribers map[string]*nats.Subscription
 	mu          sync.Mutex
 }
 
 // NewNatsClient creates a new NATS client
-func NewNatsClient(config Config) (*NatsClient, error) {
-	// Apply default config values where needed
-	if config.ConnectionTimeout == 0 {
-		config.ConnectionTimeout = DefaultConfig().ConnectionTimeout
-	}
-	if config.MaxReconnects == 0 {
-		config.MaxReconnects = DefaultConfig().MaxReconnects
-	}
-	if config.ReconnectWait == 0 {
-		config.ReconnectWait = DefaultConfig().ReconnectWait
-	}
-	if config.ReconnectBufferSize == 0 {
-		config.ReconnectBufferSize = DefaultConfig().ReconnectBufferSize
-	}
-	if config.ConnectionName == "" {
-		config.ConnectionName = DefaultConfig().ConnectionName
-	}
+func NewNatsClient(config config.Config) (*NatsClient, error) {
 
 	client := &NatsClient{
 		config:      config,
@@ -85,11 +43,6 @@ func (c *NatsClient) connect() error {
 
 	// Setup connection options
 	opts := []nats.Option{
-		nats.Name(c.config.ConnectionName),
-		nats.Timeout(c.config.ConnectionTimeout),
-		nats.MaxReconnects(c.config.MaxReconnects),
-		nats.ReconnectWait(c.config.ReconnectWait),
-		nats.ReconnectBufSize(c.config.ReconnectBufferSize),
 		nats.DisconnectErrHandler(func(nc *nats.Conn, err error) {
 			log.Warn().Err(err).Msg("Disconnected from NATS")
 		}),
@@ -107,12 +60,12 @@ func (c *NatsClient) connect() error {
 	}
 
 	// Add auth if provided
-	if c.config.Username != "" && c.config.Password != "" {
-		opts = append(opts, nats.UserInfo(c.config.Username, c.config.Password))
+	if c.config.Nats.Username != "" && c.config.Nats.Password != "" {
+		opts = append(opts, nats.UserInfo(c.config.Nats.Username, c.config.Nats.Password))
 	}
 
 	// Connect to NATS
-	c.conn, err = nats.Connect(c.config.URL, opts...)
+	c.conn, err = nats.Connect(c.config.Nats.URL, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to NATS: %w", err)
 	}
@@ -328,4 +281,83 @@ func (c *NatsClient) GetJetStream() jetstream.JetStream {
 // GetConn returns the NATS connection
 func (c *NatsClient) GetConn() *nats.Conn {
 	return c.conn
+}
+
+// setupNatsClient initializes the NATS client
+func SetupNatsClient(cfg config.Config) (*NatsClient, error) {
+
+	client, err := NewNatsClient(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating NATS client: %w", err)
+	}
+
+	return client, nil
+}
+
+// setupGlobalSubscriptions sets up handlers for all NATS messages
+func SetupGlobalSubscriptions(natsClient *NatsClient) error {
+	// Create a simple message handler function for all NATS messages
+	globalHandler := func(msg *nats.Msg) error {
+		log.Debug().
+			Str("subject", msg.Subject).
+			Str("data", string(msg.Data)).
+			Msg("Received global NATS message")
+		return nil
+	}
+
+	// Create a JetStream handler for persistent messages
+	jsHandler := func(msg jetstream.Msg) error {
+		log.Debug().
+			Str("subject", msg.Subject()).
+			Str("data", string(msg.Data())).
+			Msg("Received global JetStream message")
+		return nil
+	}
+
+	// Subscribe to all messages using the ">" wildcard
+	_, err := SubscribeToAll(natsClient, globalHandler)
+	if err != nil {
+		return fmt.Errorf("failed to create global subscription: %w", err)
+	}
+
+	// Subscribe to specific subjects that need special handling
+	_, err = SubscribeToSubject(natsClient, "notifications.*", func(msg *nats.Msg) error {
+		log.Info().
+			Str("subject", msg.Subject).
+			Str("data", string(msg.Data)).
+			Msg("Notification received")
+		return nil
+	})
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to create notifications subscription")
+	}
+
+	// Subscribe to JetStream messages
+	// This creates a stream and consumer for all messages (using ">")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Create the ALL_MESSAGES stream if it doesn't exist
+	streamConfig := jetstream.StreamConfig{
+		Name:     "ALL_MESSAGES",
+		Subjects: []string{">"},
+		Storage:  jetstream.MemoryStorage,
+	}
+
+	// Try to create the JetStream stream
+	_, err = natsClient.CreateStream(ctx, streamConfig)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to create ALL_MESSAGES stream, JetStream subscription not set up")
+	} else {
+		// Set up JetStream subscription
+		_, err = SubscribeToAllJetStream(natsClient, "ALL_MESSAGES", jsHandler)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to create JetStream subscription")
+		} else {
+			log.Info().Msg("Global JetStream subscription handler set up successfully")
+		}
+	}
+
+	log.Info().Msg("Global NATS subscription handlers set up successfully")
+	return nil
 }

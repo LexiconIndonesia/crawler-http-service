@@ -2,20 +2,24 @@ package crawler
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"time"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/common/models"
+	"github.com/LexiconIndonesia/crawler-http-service/common/services"
 	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
-	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 )
 
 // BaseCrawlerConfig represents the base configuration for a crawler
 type BaseCrawlerConfig struct {
-	DataSourceID   string
+	DataSource     repository.DataSource
 	RetryAttempts  int
 	RetryDelay     time.Duration
 	RequestTimeout time.Duration
@@ -37,11 +41,11 @@ func DefaultBaseCrawlerConfig() BaseCrawlerConfig {
 // BaseCrawler provides core infrastructure operations for all crawlers
 type BaseCrawler struct {
 	Config          BaseCrawlerConfig
-	MessageBroker   MessageBroker
+	MessageBroker   messaging.MessageBroker
 	StorageService  storage.StorageService
-	UrlFrontierRepo UrlFrontierRepository
-	ExtractionRepo  ExtractionRepository
-	DataSourceRepo  DataSourceRepository
+	UrlFrontierRepo services.UrlFrontierService
+	ExtractionRepo  services.ExtractionService
+	DataSourceRepo  services.DataSourceService
 }
 
 // SaveUrlFrontier saves a URL frontier to the database
@@ -50,15 +54,11 @@ func (c *BaseCrawler) SaveUrlFrontier(ctx context.Context, frontier repository.U
 		return repository.UrlFrontier{}, fmt.Errorf("URL frontier repository not initialized")
 	}
 
-	// Fill in standard fields if not already set
-	if frontier.ID == "" {
-		frontier.ID = c.GenerateID()
-	}
 	if frontier.CreatedAt.IsZero() {
 		frontier.CreatedAt = time.Now()
 	}
 	if frontier.DataSourceID == "" {
-		frontier.DataSourceID = c.Config.DataSourceID
+		frontier.DataSourceID = c.Config.DataSource.ID
 	}
 
 	// Parse domain from URL if not set
@@ -88,14 +88,12 @@ func (c *BaseCrawler) SaveUrlFrontierBatch(ctx context.Context, frontiers []repo
 
 	// Fill in standard fields for each frontier
 	for i := range frontiers {
-		if frontiers[i].ID == "" {
-			frontiers[i].ID = c.GenerateID()
-		}
+
 		if frontiers[i].CreatedAt.IsZero() {
 			frontiers[i].CreatedAt = time.Now()
 		}
 		if frontiers[i].DataSourceID == "" {
-			frontiers[i].DataSourceID = c.Config.DataSourceID
+			frontiers[i].DataSourceID = c.Config.DataSource.ID
 		}
 		if frontiers[i].Domain == "" && frontiers[i].Url != "" {
 			parsedURL, err := url.Parse(frontiers[i].Url)
@@ -162,7 +160,7 @@ func (c *BaseCrawler) UploadFileToStorage(ctx context.Context, bucket, objectNam
 }
 
 // UpdateUrlFrontierStatus updates the status of a URL frontier
-func (c *BaseCrawler) UpdateUrlFrontierStatus(ctx context.Context, id string, status UrlFrontierStatus, errorMessage string) error {
+func (c *BaseCrawler) UpdateUrlFrontierStatus(ctx context.Context, id string, status models.UrlFrontierStatus, errorMessage string) error {
 	if c.UrlFrontierRepo == nil {
 		return fmt.Errorf("URL frontier repository not initialized")
 	}
@@ -175,22 +173,6 @@ func (c *BaseCrawler) UpdateUrlFrontierStatus(ctx context.Context, id string, st
 
 	log.Debug().Str("id", id).Int("status", int(status)).Msg("Updated URL frontier status")
 	return nil
-}
-
-// GetDataSource gets a data source by ID
-func (c *BaseCrawler) GetDataSource(ctx context.Context, id string) (DataSource, error) {
-	if c.DataSourceRepo == nil {
-		return DataSource{}, fmt.Errorf("data source repository not initialized")
-	}
-
-	// Get data source
-	dataSource, err := c.DataSourceRepo.GetByID(ctx, id)
-	if err != nil {
-		log.Error().Err(err).Str("id", id).Msg("Failed to get data source")
-		return DataSource{}, err
-	}
-
-	return dataSource, nil
 }
 
 // WithRetry executes a function with retry logic
@@ -221,6 +203,8 @@ func (c *BaseCrawler) WithRetry(ctx context.Context, operation func() error) err
 }
 
 // GenerateID generates a unique ID
-func (c *BaseCrawler) GenerateID() string {
-	return uuid.New().String()
+func (c *BaseCrawler) GenerateID(url string) string {
+	// generate id by hashing the url with sha256 in hex format
+	hash := sha256.Sum256([]byte(url))
+	return hex.EncodeToString(hash[:])
 }

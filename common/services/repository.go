@@ -1,32 +1,15 @@
-package crawler
+package services
 
 import (
 	"context"
 	"time"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common/models"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 )
 
-// UrlFrontierStatus represents the status of a URL frontier
-type UrlFrontierStatus int
-
-const (
-	// UrlFrontierStatusPending indicates the URL is pending crawling
-	UrlFrontierStatusPending UrlFrontierStatus = 0
-	// UrlFrontierStatusCrawled indicates the URL has been crawled
-	UrlFrontierStatusCrawled UrlFrontierStatus = 1
-	// UrlFrontierStatusChanged indicates the URL content has changed since last crawl
-	UrlFrontierStatusChanged UrlFrontierStatus = 2
-	// UrlFrontierStatusFailed indicates crawling the URL failed
-	UrlFrontierStatusFailed UrlFrontierStatus = 3
-	// UrlFrontierStatusScheduled indicates the URL is scheduled for crawling
-	UrlFrontierStatusScheduled UrlFrontierStatus = 4
-	// UrlFrontierStatusProcessing indicates the URL is being processed
-	UrlFrontierStatusProcessing UrlFrontierStatus = 5
-)
-
-// UrlFrontierRepository defines the interface for URL frontier database operations
-type UrlFrontierRepository interface {
+// UrlFrontierService defines the interface for URL frontier database operations
+type UrlFrontierService interface {
 	// Create creates a new URL frontier
 	Create(ctx context.Context, frontier repository.UrlFrontier) (repository.UrlFrontier, error)
 
@@ -43,7 +26,7 @@ type UrlFrontierRepository interface {
 	GetPendingByDataSource(ctx context.Context, dataSourceID string, limit int) ([]repository.UrlFrontier, error)
 
 	// UpdateStatus updates the status of a URL frontier
-	UpdateStatus(ctx context.Context, id string, status UrlFrontierStatus, errorMessage string) error
+	UpdateStatus(ctx context.Context, id string, status models.UrlFrontierStatus, errorMessage string) error
 
 	// UpdateNextCrawl updates the next crawl time of a URL frontier
 	UpdateNextCrawl(ctx context.Context, id string, nextCrawlAt time.Time) error
@@ -52,8 +35,8 @@ type UrlFrontierRepository interface {
 	IncrementAttempts(ctx context.Context, id string) error
 }
 
-// ExtractionRepository defines the interface for extraction database operations
-type ExtractionRepository interface {
+// ExtractionService defines the interface for extraction database operations
+type ExtractionService interface {
 	// Create creates a new extraction
 	Create(ctx context.Context, extraction repository.Extraction) (repository.Extraction, error)
 
@@ -73,27 +56,17 @@ type ExtractionRepository interface {
 	CreateVersion(ctx context.Context, extractionID string, version int, content string, metadata map[string]interface{}, pageHash string) error
 }
 
-// DataSourceRepository defines the interface for data source database operations
-type DataSourceRepository interface {
+// DataSourceService defines the interface for data source database operations
+type DataSourceService interface {
 	// GetByID gets a data source by ID
-	GetByID(ctx context.Context, id string) (DataSource, error)
+	GetByID(ctx context.Context, id string) (repository.DataSource, error)
 
 	// GetByType gets data sources by type
-	GetByType(ctx context.Context, sourceType string) ([]DataSource, error)
+	GetByType(ctx context.Context, sourceType string) ([]repository.DataSource, error)
 
 	// GetActive gets active data sources
-	GetActive(ctx context.Context) ([]DataSource, error)
-}
+	GetActive(ctx context.Context) ([]repository.DataSource, error)
 
-// DataSource represents a data source
-type DataSource struct {
-	ID          string
-	Name        string
-	Country     string
-	SourceType  string
-	BaseURL     string
-	Description string
-	ConfigType  string
-	Config      map[string]interface{}
-	IsActive    bool
+	// Get Datasource by name
+	GetByName(ctx context.Context, name string) (repository.DataSource, error)
 }

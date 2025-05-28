@@ -21,37 +21,121 @@ type BaseConfig struct {
 }
 
 // MahkamahAgungConfig represents configuration for Indonesia Supreme Court
-type MahkamahAgungConfig struct {
-	BaseConfig
-	SearchFormSelector string `json:"search_form_selector"`
+func UnmarshalIndonesiaSupremeCourtConfig(data []byte) (IndonesiaSupremeCourtConfig, error) {
+	var r IndonesiaSupremeCourtConfig
+	err := json.Unmarshal(data, &r)
+	return r, err
 }
 
-// Validate validates the MahkamahAgungConfig
-func (c MahkamahAgungConfig) Validate() error {
-	if c.PaginationSelector == "" {
-		return errors.New("missing pagination selector")
+func (r *IndonesiaSupremeCourtConfig) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+type IndonesiaSupremeCourtConfig struct {
+	ListPath       string                  `json:"list_path"`
+	SortMethods    []string                `json:"sort_methods"`
+	SortOptions    []string                `json:"sort_options"`
+	ListQueryParam IndonesiaListQueryParam `json:"list_query_params"`
+}
+
+func (c IndonesiaSupremeCourtConfig) Validate() error {
+	if c.ListPath == "" {
+		return errors.New("list path is required")
 	}
-	if c.DetailLinkSelector == "" {
-		return errors.New("missing detail link selector")
+	if c.ListQueryParam.Page == "" {
+		return errors.New("page is required")
+	}
+	if c.ListQueryParam.Sort == "" {
+		return errors.New("sort is required")
+	}
+	if c.ListQueryParam.Query == "" {
+		return errors.New("query is required")
+	}
+	if c.ListQueryParam.SortBy == "" {
+		return errors.New("sort by is required")
+	}
+	if c.ListQueryParam.Category == "" {
+		return errors.New("category is required")
+	}
+	if c.ListQueryParam.SortOrder == "" {
+		return errors.New("sort order is required")
+	}
+	if c.ListQueryParam.SortOrderBy == "" {
+		return errors.New("sort order by is required")
+	}
+	if c.ListQueryParam.CategoryValue == "" {
+		return errors.New("category value is required")
 	}
 	return nil
 }
 
-// ElitigationSGConfig represents configuration for Singapore Courts
-type ElitigationSGConfig struct {
-	BaseConfig
-	APIToken string `json:"api_token"`
+type IndonesiaListQueryParam struct {
+	Page          string `json:"page"`
+	Sort          string `json:"sort"`
+	Query         string `json:"query"`
+	SortBy        string `json:"sort_by"`
+	Category      string `json:"category"`
+	SortOrder     string `json:"sort_order"`
+	SortOrderBy   string `json:"sort_order_by"`
+	CategoryValue string `json:"category_value"`
 }
 
-// Validate validates the ElitigationSGConfig
-func (c ElitigationSGConfig) Validate() error {
-	if c.APIToken == "" {
-		return errors.New("api token required")
+func UnmarshalSingaporeSupremeCourtConfig(data []byte) (SingaporeSupremeCourtConfig, error) {
+	var r SingaporeSupremeCourtConfig
+	err := json.Unmarshal(data, &r)
+	return r, err
+}
+
+func (r *SingaporeSupremeCourtConfig) Marshal() ([]byte, error) {
+	return json.Marshal(r)
+}
+
+type SingaporeSupremeCourtConfig struct {
+	ListPath       string                  `json:"list_path"`
+	SortMethods    []string                `json:"sort_methods"`
+	SortOptions    []string                `json:"sort_options"`
+	ListQueryParam SingaporeListQueryParam `json:"list_query_param"`
+}
+
+func (c SingaporeSupremeCourtConfig) Validate() error {
+	if c.ListPath == "" {
+		return errors.New("list path is required")
 	}
-	if c.DetailLinkSelector == "" {
-		return errors.New("missing detail link selector")
+	if c.ListQueryParam.Page == "" {
+		return errors.New("page is required")
 	}
+	if c.ListQueryParam.Query == "" {
+		return errors.New("query is required")
+	}
+	if c.ListQueryParam.Filter.Key == "" {
+		return errors.New("filter key is required")
+	}
+	if c.ListQueryParam.Filter.Value == "" {
+		return errors.New("filter value is required")
+	}
+	if c.ListQueryParam.Order.Key == "" {
+		return errors.New("order key is required")
+	}
+	if c.ListQueryParam.Order.Value == "" {
+		return errors.New("order value is required")
+	}
+	if c.ListQueryParam.Verbose.Key == "" {
+		return errors.New("verbose key is required")
+	}
+	if c.ListQueryParam.Verbose.Value == "" {
+		return errors.New("verbose value is required")
+	}
+
 	return nil
+}
+
+type SingaporeListQueryParam struct {
+	Page    string   `json:"page"`
+	Query   string   `json:"query"`
+	Sort    KeyValue `json:"sort"`
+	Order   KeyValue `json:"order"`
+	Filter  KeyValue `json:"filter"`
+	Verbose KeyValue `json:"verbose"`
 }
 
 // LKPPBlacklistConfig represents configuration for LKPP Blacklist
@@ -76,25 +160,30 @@ func (c LKPPBlacklistConfig) Validate() error {
 // LoadDataSourceConfig loads a data source config based on the config type
 func LoadDataSourceConfig(raw json.RawMessage, configType string) (DataSourceConfig, error) {
 	switch configType {
-	case "mahkamahagung":
-		var c MahkamahAgungConfig
+	case "indonesia-supreme-court":
+		var c IndonesiaSupremeCourtConfig
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal mahkamahagung config: %w", err)
 		}
 		return c, nil
-	case "elitigation":
-		var c ElitigationSGConfig
+	case "singapore-supreme-court":
+		var c SingaporeSupremeCourtConfig
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal elitigation config: %w", err)
 		}
 		return c, nil
-	case "lkpp_blacklist":
+	case "lkpp-blacklist":
 		var c LKPPBlacklistConfig
 		if err := json.Unmarshal(raw, &c); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal lkpp_blacklist config: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal lkpp-blacklist config: %w", err)
 		}
 		return c, nil
 	default:
 		return nil, fmt.Errorf("unknown config type: %s", configType)
 	}
+}
+
+type KeyValue struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
 }
