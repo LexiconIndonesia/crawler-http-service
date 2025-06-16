@@ -33,7 +33,7 @@ func DefaultBaseCrawlerConfig() BaseCrawlerConfig {
 		RetryAttempts:  3,
 		RetryDelay:     time.Second * 2,
 		RequestTimeout: time.Second * 30,
-		MaxConcurrency: 5,
+		MaxConcurrency: 10,
 		UserAgent:      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
 	}
 }
@@ -41,7 +41,7 @@ func DefaultBaseCrawlerConfig() BaseCrawlerConfig {
 // BaseCrawler provides core infrastructure operations for all crawlers
 type BaseCrawler struct {
 	Config          BaseCrawlerConfig
-	MessageBroker   messaging.MessageBroker
+	MessageBroker   *messaging.NatsBroker
 	StorageService  storage.StorageService
 	UrlFrontierRepo services.UrlFrontierService
 	ExtractionRepo  services.ExtractionService
@@ -133,7 +133,7 @@ func (c *BaseCrawler) PublishFrontier(ctx context.Context, frontier repository.U
 	}
 
 	// Publish to message broker
-	if err := c.MessageBroker.Publish(ctx, topic, msg); err != nil {
+	if err := c.MessageBroker.Publish(topic, msg); err != nil {
 		log.Error().Err(err).Str("topic", topic).Msg("Failed to publish frontier to message broker")
 		return err
 	}

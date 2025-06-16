@@ -18,67 +18,6 @@ var (
 	ErrBatchAlreadyClosed = errors.New("batch already closed")
 )
 
-const updateUrlFrontierStatus = `-- name: UpdateUrlFrontierStatus :batchexec
-UPDATE url_frontiers
-SET
-  status = $2,
-  attempts = COALESCE(attempts, 0) + 1,
-  last_crawled_at = CURRENT_TIMESTAMP,
-  error_message = $3,
-  updated_at = $4
-WHERE id = $1
-`
-
-type UpdateUrlFrontierStatusBatchResults struct {
-	br     pgx.BatchResults
-	tot    int
-	closed bool
-}
-
-type UpdateUrlFrontierStatusParams struct {
-	ID           string
-	Status       int16
-	ErrorMessage pgtype.Text
-	UpdatedAt    time.Time
-}
-
-// Update status and increment attempts for URL frontiers
-func (q *Queries) UpdateUrlFrontierStatus(ctx context.Context, arg []UpdateUrlFrontierStatusParams) *UpdateUrlFrontierStatusBatchResults {
-	batch := &pgx.Batch{}
-	for _, a := range arg {
-		vals := []interface{}{
-			a.ID,
-			a.Status,
-			a.ErrorMessage,
-			a.UpdatedAt,
-		}
-		batch.Queue(updateUrlFrontierStatus, vals...)
-	}
-	br := q.db.SendBatch(ctx, batch)
-	return &UpdateUrlFrontierStatusBatchResults{br, len(arg), false}
-}
-
-func (b *UpdateUrlFrontierStatusBatchResults) Exec(f func(int, error)) {
-	defer b.br.Close()
-	for t := 0; t < b.tot; t++ {
-		if b.closed {
-			if f != nil {
-				f(t, ErrBatchAlreadyClosed)
-			}
-			continue
-		}
-		_, err := b.br.Exec()
-		if f != nil {
-			f(t, err)
-		}
-	}
-}
-
-func (b *UpdateUrlFrontierStatusBatchResults) Close() error {
-	b.closed = true
-	return b.br.Close()
-}
-
 const upsertExtraction = `-- name: UpsertExtraction :batchexec
 
 INSERT INTO extractions (id, url_frontier_id, site_content, artifact_link, raw_page_link, extraction_date, content_type, metadata, language, page_hash, version, created_at, updated_at)

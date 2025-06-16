@@ -1,4 +1,4 @@
-package lkpp_blacklist
+package lkpp
 
 import (
 	"time"

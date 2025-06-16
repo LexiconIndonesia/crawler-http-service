@@ -1,4 +1,4 @@
-package singapore_supreme_court
+package ssc
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 )
 
 type urlCrawler struct {
-	baseUrl        string
+	baseURL        string
 	config         crawler.SingaporeSupremeCourtConfig
 	filter         string
 	yearOfDecision string
@@ -21,7 +21,7 @@ type urlCrawler struct {
 	verbose        string
 }
 
-func (u *urlCrawler) constructUrl() string {
+func (u *urlCrawler) constructURL() string {
 	builder := strings.Builder{}
 	filterKey := u.config.ListQueryParam.Filter.Key
 	sortKey := u.config.ListQueryParam.Sort.Key
@@ -30,7 +30,7 @@ func (u *urlCrawler) constructUrl() string {
 	queryKey := u.config.ListQueryParam.Query
 	verboseKey := u.config.ListQueryParam.Verbose.Key
 
-	builder.WriteString(u.baseUrl)
+	builder.WriteString(u.baseURL)
 	builder.WriteString("?")
 	builder.WriteString(fmt.Sprintf("%s=%s", filterKey, u.filter))
 	builder.WriteString(fmt.Sprintf("&%s=%s", sortKey, u.sortBy))
@@ -45,7 +45,7 @@ func (u *urlCrawler) constructUrl() string {
 func (u *urlCrawler) copy() urlCrawler {
 	return urlCrawler{
 		config:         u.config,
-		baseUrl:        u.baseUrl,
+		baseURL:        u.baseURL,
 		filter:         u.filter,
 		yearOfDecision: u.yearOfDecision,
 		sortBy:         u.sortBy,
@@ -56,15 +56,14 @@ func (u *urlCrawler) copy() urlCrawler {
 	}
 }
 
-func newUrlCrawler(baseUrl string, config crawler.SingaporeSupremeCourtConfig, page int) (urlCrawler, error) {
-
-	parsedUrl, err := stdUrl.Parse(baseUrl)
+func newURLCrawler(baseURL string, config crawler.SingaporeSupremeCourtConfig, page int) (urlCrawler, error) {
+	parsedURL, err := stdUrl.Parse(baseURL)
 	if err != nil {
 		log.Error().Err(err).Msg("Error parsing URL")
 		return urlCrawler{}, err
 	}
 
-	base := fmt.Sprintf("%s://%s%s", parsedUrl.Scheme, parsedUrl.Host, parsedUrl.Path)
+	base := fmt.Sprintf("%s://%s%s", parsedURL.Scheme, parsedURL.Host, parsedURL.Path)
 
 	filter := config.ListQueryParam.Filter.Value
 	sortBy := config.ListQueryParam.Sort.Value
@@ -75,7 +74,7 @@ func newUrlCrawler(baseUrl string, config crawler.SingaporeSupremeCourtConfig, p
 
 	return urlCrawler{
 		config:         config,
-		baseUrl:        base,
+		baseURL:        base,
 		filter:         filter,
 		yearOfDecision: yearOfDecision,
 		sortBy:         sortBy,
@@ -84,22 +83,20 @@ func newUrlCrawler(baseUrl string, config crawler.SingaporeSupremeCourtConfig, p
 		verbose:        verbose,
 		currentPage:    page,
 	}, nil
-
 }
 
-func newStartUrlCrawler(baseConfig crawler.BaseCrawlerConfig, config crawler.SingaporeSupremeCourtConfig) (urlCrawler, error) {
-	firstUrl := fmt.Sprintf("%s%s", baseConfig.DataSource.BaseUrl.String, config.ListPath)
+func newStartURLCrawler(baseConfig crawler.BaseCrawlerConfig, config crawler.SingaporeSupremeCourtConfig) (urlCrawler, error) {
+	firstURL := fmt.Sprintf("%s%s", baseConfig.DataSource.BaseUrl.String, config.ListPath)
 
-	return newUrlCrawler(firstUrl, config, 1)
-
+	return newURLCrawler(firstURL, config, 1)
 }
 
-func generateUrls(urlCrawler urlCrawler, startPage int, endPage int) []string {
-	urls := []string{}
+func generateUrls(url urlCrawler, startPage int, endPage int) []urlCrawler {
+	urls := []urlCrawler{}
 	for i := startPage; i <= endPage; i++ {
-		newUrlCrawler := urlCrawler.copy()
-		newUrlCrawler.currentPage = i
-		urls = append(urls, newUrlCrawler.constructUrl())
+		newURLCrawler := url.copy()
+		newURLCrawler.currentPage = i
+		urls = append(urls, newURLCrawler)
 	}
 	return urls
 }

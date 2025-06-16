@@ -366,6 +366,64 @@ func (q *Queries) GetUrlFrontierByUrl(ctx context.Context, url string) (UrlFront
 	return i, err
 }
 
+const updateUrlFrontierStatus = `-- name: UpdateUrlFrontierStatus :exec
+UPDATE url_frontiers
+SET
+  status = $2,
+  attempts = COALESCE(attempts, 0) + 1,
+  last_crawled_at = CURRENT_TIMESTAMP,
+  error_message = $3,
+  updated_at = $4
+WHERE id = $1
+`
+
+type UpdateUrlFrontierStatusParams struct {
+	ID           string
+	Status       int16
+	ErrorMessage pgtype.Text
+	UpdatedAt    time.Time
+}
+
+// Update status and increment attempts for URL frontiers
+func (q *Queries) UpdateUrlFrontierStatus(ctx context.Context, arg UpdateUrlFrontierStatusParams) error {
+	_, err := q.db.Exec(ctx, updateUrlFrontierStatus,
+		arg.ID,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
+const updateUrlFrontierStatusBatch = `-- name: UpdateUrlFrontierStatusBatch :exec
+UPDATE url_frontiers
+SET
+  status = $2,
+  attempts = COALESCE(attempts, 0) + 1,
+  last_crawled_at = CURRENT_TIMESTAMP,
+  error_message = $3,
+  updated_at = $4
+WHERE id = ANY($1)
+`
+
+type UpdateUrlFrontierStatusBatchParams struct {
+	ID           string
+	Status       int16
+	ErrorMessage pgtype.Text
+	UpdatedAt    time.Time
+}
+
+// Update Status and increment by batch ids
+func (q *Queries) UpdateUrlFrontierStatusBatch(ctx context.Context, arg UpdateUrlFrontierStatusBatchParams) error {
+	_, err := q.db.Exec(ctx, updateUrlFrontierStatusBatch,
+		arg.ID,
+		arg.Status,
+		arg.ErrorMessage,
+		arg.UpdatedAt,
+	)
+	return err
+}
+
 const upsertDataSource = `-- name: UpsertDataSource :exec
 INSERT INTO data_sources (id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)

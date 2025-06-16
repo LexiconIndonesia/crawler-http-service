@@ -13,6 +13,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/logger"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
 
 	"github.com/rs/zerolog/log"
 
@@ -72,7 +73,7 @@ func main() {
 	log.Info().Msg("Zerolog database hooks initialized")
 
 	// INITIATE NATS CLIENT
-	natsClient, err := messaging.SetupNatsClient(cfg)
+	natsClient, err := messaging.SetupNatsBroker(cfg)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to setup NATS client")
 	}
@@ -82,6 +83,16 @@ func main() {
 	if err := messaging.SetupGlobalSubscriptions(natsClient); err != nil {
 		log.Fatal().Err(err).Msg("Failed to setup global subscriptions")
 	}
+
+	// gcs
+	gcsStorage, err := storage.NewGCSStorage(ctx, storage.GCSConfig{
+		ProjectID:       cfg.GCS.ProjectID,
+		CredentialsFile: cfg.GCS.CredentialsFile,
+	})
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to setup GCS storage")
+	}
+	storage.SetStorageClient(gcsStorage)
 
 	// Register all crawlers to listen to NATS messages
 	if err := crawler.RegisterCrawlers(ctx, natsClient, dbConn); err != nil {

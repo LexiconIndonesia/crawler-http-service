@@ -30,10 +30,10 @@ type Crawler interface {
 	Consume(ctx context.Context, message []byte) error
 
 	// ExtractElements extracts URL frontiers from a page
-	ExtractElements(ctx context.Context, page *rod.Element) (repository.UrlFrontier, error)
+	ExtractElements(ctx context.Context, element *rod.Element) (repository.UrlFrontier, error)
 
 	// Crawl a page
-	CrawlPage(ctx context.Context, page *rod.Page, url string) error
+	CrawlPage(ctx context.Context, page *rod.Page, url string) ([]repository.UrlFrontier, error)
 }
 
 // Scraper defines the interface for web scraping operations
@@ -47,18 +47,18 @@ type Scraper interface {
 	// ScrapeAll scrapes all pending URLs for a data source
 	ScrapeAll(ctx context.Context) error
 
-	// ScrapeByUrlFrontierID scrapes a specific URL frontier by ID
-	ScrapeByUrlFrontierID(ctx context.Context, id string) error
+	// ScrapeByURLFrontierID scrapes a specific URL frontier by ID
+	ScrapeByURLFrontierID(ctx context.Context, id string) error
 
 	// Consume processes a message from a queue
 	Consume(ctx context.Context, message []byte) error
+
+	// Scrape a Page
+	ScrapePage(ctx context.Context, page *rod.Page, url repository.UrlFrontier) (repository.Extraction, error)
 
 	// ExtractElements extracts data from a page
 	ExtractElements(ctx context.Context, page *rod.Page) ([]repository.Extraction, error)
 
 	// ExtractArtifactsFromPage extracts and downloads artifacts from a page
 	ExtractArtifactsFromPage(ctx context.Context, page *rod.Page) ([]models.ExtractionArtifact, error)
-
-	// Navigate navigates to a URL and returns the page
-	Navigate(ctx context.Context, url string) (*rod.Page, error)
 }

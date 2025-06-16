@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/models"
@@ -105,23 +106,38 @@ func (r *UrlFrontierRepository) UpdateStatus(ctx context.Context, id string, sta
 		errMsg.Valid = true
 	}
 
-	params := []repository.UpdateUrlFrontierStatusParams{
-		{
-			ID:           id,
-			Status:       int16(status),
-			ErrorMessage: errMsg,
-			UpdatedAt:    time.Now(),
-		},
+	params := repository.UpdateUrlFrontierStatusParams{
+		ID:           id,
+		Status:       int16(status),
+		ErrorMessage: errMsg,
+		UpdatedAt:    time.Now(),
 	}
 
-	batchResults := r.db.UpdateUrlFrontierStatus(ctx, params)
+	err := r.db.UpdateUrlFrontierStatus(ctx, params)
 
-	var err error
-	batchResults.Exec(func(i int, e error) {
-		if e != nil {
-			err = e
-		}
-	})
+	return err
+}
+
+// UpdateStatusBatch updates the status of a URL frontier by batch
+func (r *UrlFrontierRepository) UpdateStatusBatch(ctx context.Context, id []string, status models.UrlFrontierStatus, errorMessage string) error {
+	errMsg := pgtype.Text{}
+	if errorMessage != "" {
+		errMsg.String = errorMessage
+		errMsg.Valid = true
+	}
+
+	params := repository.UpdateUrlFrontierStatusBatchParams{
+		ID:           strings.Join(id, ","),
+		Status:       int16(status),
+		ErrorMessage: errMsg,
+		UpdatedAt:    time.Now(),
+	}
+
+	err := r.db.UpdateUrlFrontierStatusBatch(ctx, params)
+
+	if err != nil {
+		return err
+	}
 
 	return err
 }

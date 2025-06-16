@@ -133,7 +133,7 @@ func (m *Module) subscribeWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 // ensureStream ensures that a stream exists with the given name and subjects
-func ensureStream(ctx context.Context, client *messaging.NatsClient, name string, subjects []string) (jetstream.Stream, error) {
+func ensureStream(ctx context.Context, client *messaging.NatsBroker, name string, subjects []string) (jetstream.Stream, error) {
 	// Try to get the stream first
 	stream, err := client.GetStream(ctx, name)
 	if err == nil {

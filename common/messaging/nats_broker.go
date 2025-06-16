@@ -12,8 +12,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// NatsClient represents a NATS client
-type NatsClient struct {
+// NatsBroker implements the MessageBroker interface for NATS
+type NatsBroker struct {
 	conn        *nats.Conn
 	js          jetstream.JetStream
 	config      config.Config
@@ -21,11 +21,11 @@ type NatsClient struct {
 	mu          sync.Mutex
 }
 
-// NewNatsClient creates a new NATS client
-func NewNatsClient(config config.Config) (*NatsClient, error) {
+// NewNatsBroker creates a new NATS message broker
+func NewNatsBroker(cfg config.Config) (*NatsBroker, error) {
 
-	client := &NatsClient{
-		config:      config,
+	client := &NatsBroker{
+		config:      cfg,
 		subscribers: make(map[string]*nats.Subscription),
 	}
 
@@ -38,7 +38,7 @@ func NewNatsClient(config config.Config) (*NatsClient, error) {
 }
 
 // connect connects to the NATS server
-func (c *NatsClient) connect() error {
+func (c *NatsBroker) connect() error {
 	var err error
 
 	// Setup connection options
@@ -82,7 +82,7 @@ func (c *NatsClient) connect() error {
 }
 
 // Close closes the NATS connection
-func (c *NatsClient) Close() error {
+func (c *NatsBroker) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -94,7 +94,7 @@ func (c *NatsClient) Close() error {
 }
 
 // Publish publishes a message to a subject
-func (c *NatsClient) Publish(subject string, data []byte) error {
+func (c *NatsBroker) Publish(subject string, data []byte) error {
 	if c.conn == nil || !c.conn.IsConnected() {
 		return fmt.Errorf("not connected to NATS")
 	}
@@ -103,7 +103,7 @@ func (c *NatsClient) Publish(subject string, data []byte) error {
 }
 
 // PublishAsync publishes a message to a subject asynchronously
-func (c *NatsClient) PublishAsync(subject string, data []byte) (jetstream.PubAckFuture, error) {
+func (c *NatsBroker) PublishAsync(subject string, data []byte) (jetstream.PubAckFuture, error) {
 	if c.js == nil {
 		return nil, fmt.Errorf("JetStream not initialized")
 	}
@@ -146,7 +146,7 @@ func (c *NatsClient) PublishAsync(subject string, data []byte) (jetstream.PubAck
 }
 
 // Request sends a request and waits for a response
-func (c *NatsClient) Request(subject string, data []byte, timeout time.Duration) (*nats.Msg, error) {
+func (c *NatsBroker) Request(subject string, data []byte, timeout time.Duration) (*nats.Msg, error) {
 	if c.conn == nil || !c.conn.IsConnected() {
 		return nil, fmt.Errorf("not connected to NATS")
 	}
@@ -155,7 +155,7 @@ func (c *NatsClient) Request(subject string, data []byte, timeout time.Duration)
 }
 
 // Subscribe subscribes to a subject
-func (c *NatsClient) Subscribe(subject string, handler nats.MsgHandler) (*nats.Subscription, error) {
+func (c *NatsBroker) Subscribe(subject string, handler nats.MsgHandler) (*nats.Subscription, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -174,7 +174,7 @@ func (c *NatsClient) Subscribe(subject string, handler nats.MsgHandler) (*nats.S
 }
 
 // QueueSubscribe subscribes to a subject with a queue group
-func (c *NatsClient) QueueSubscribe(subject, queue string, handler nats.MsgHandler) (*nats.Subscription, error) {
+func (c *NatsBroker) QueueSubscribe(subject, queue string, handler nats.MsgHandler) (*nats.Subscription, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -193,7 +193,7 @@ func (c *NatsClient) QueueSubscribe(subject, queue string, handler nats.MsgHandl
 }
 
 // CreateStream creates a JetStream stream
-func (c *NatsClient) CreateStream(ctx context.Context, config jetstream.StreamConfig) (jetstream.Stream, error) {
+func (c *NatsBroker) CreateStream(ctx context.Context, config jetstream.StreamConfig) (jetstream.Stream, error) {
 	if c.js == nil {
 		return nil, fmt.Errorf("JetStream not initialized")
 	}
@@ -217,7 +217,7 @@ func (c *NatsClient) CreateStream(ctx context.Context, config jetstream.StreamCo
 }
 
 // GetStream gets a JetStream stream
-func (c *NatsClient) GetStream(ctx context.Context, streamName string) (jetstream.Stream, error) {
+func (c *NatsBroker) GetStream(ctx context.Context, streamName string) (jetstream.Stream, error) {
 	if c.js == nil {
 		return nil, fmt.Errorf("JetStream not initialized")
 	}
@@ -231,7 +231,7 @@ func (c *NatsClient) GetStream(ctx context.Context, streamName string) (jetstrea
 }
 
 // CreateConsumer creates a JetStream consumer
-func (c *NatsClient) CreateConsumer(ctx context.Context, streamName string, config jetstream.ConsumerConfig) (jetstream.Consumer, error) {
+func (c *NatsBroker) CreateConsumer(ctx context.Context, streamName string, config jetstream.ConsumerConfig) (jetstream.Consumer, error) {
 	if c.js == nil {
 		return nil, fmt.Errorf("JetStream not initialized")
 	}
@@ -260,7 +260,7 @@ func (c *NatsClient) CreateConsumer(ctx context.Context, streamName string, conf
 }
 
 // Consume consumes messages from a JetStream consumer
-func (c *NatsClient) Consume(ctx context.Context, consumer jetstream.Consumer, handler jetstream.MessageHandler) (jetstream.ConsumeContext, error) {
+func (c *NatsBroker) Consume(ctx context.Context, consumer jetstream.Consumer, handler jetstream.MessageHandler) (jetstream.ConsumeContext, error) {
 	if c.js == nil {
 		return nil, fmt.Errorf("JetStream not initialized")
 	}
@@ -274,19 +274,19 @@ func (c *NatsClient) Consume(ctx context.Context, consumer jetstream.Consumer, h
 }
 
 // GetJetStream returns the JetStream context
-func (c *NatsClient) GetJetStream() jetstream.JetStream {
+func (c *NatsBroker) GetJetStream() jetstream.JetStream {
 	return c.js
 }
 
 // GetConn returns the NATS connection
-func (c *NatsClient) GetConn() *nats.Conn {
+func (c *NatsBroker) GetConn() *nats.Conn {
 	return c.conn
 }
 
-// setupNatsClient initializes the NATS client
-func SetupNatsClient(cfg config.Config) (*NatsClient, error) {
+// setupNatsBroker initializes the NATS client
+func SetupNatsBroker(cfg config.Config) (*NatsBroker, error) {
 
-	client, err := NewNatsClient(cfg)
+	client, err := NewNatsBroker(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("creating NATS client: %w", err)
 	}
@@ -295,7 +295,7 @@ func SetupNatsClient(cfg config.Config) (*NatsClient, error) {
 }
 
 // setupGlobalSubscriptions sets up handlers for all NATS messages
-func SetupGlobalSubscriptions(natsClient *NatsClient) error {
+func SetupGlobalSubscriptions(natsClient *NatsBroker) error {
 	// Create a simple message handler function for all NATS messages
 	globalHandler := func(msg *nats.Msg) error {
 		log.Debug().

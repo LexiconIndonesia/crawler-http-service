@@ -1,4 +1,4 @@
-package indonesia_supreme_court
+package isc
 
 type UrlFrontierMetadata struct {
 	Title            string   `json:"title"`

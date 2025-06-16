@@ -1,13 +1,15 @@
-package lkpp_blacklist
+package lkpp
 
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"time"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common"
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
+	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/common/services"
+	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
 	"github.com/rs/zerolog/log"
@@ -35,27 +37,23 @@ func (c LKPPBlacklistConfig) Validate() error {
 // LKPPBlacklistCrawler is a crawler for the LKPP blacklist
 type LKPPBlacklistCrawler struct {
 	crawler.BaseCrawler
-	Config       LKPPBlacklistConfig
-	httpClient   *http.Client
-	defaultDelay time.Duration
+	Config LKPPBlacklistConfig
 }
 
 // NewLKPPBlacklistCrawler creates a new LKPPBlacklistCrawler
-func NewLKPPBlacklistCrawler(config LKPPBlacklistConfig, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (*LKPPBlacklistCrawler, error) {
-	// Set up HTTP client
-	httpClient := &http.Client{
-		Timeout: baseConfig.RequestTimeout,
-	}
+func NewLKPPBlacklistCrawler(db *db.DB, config LKPPBlacklistConfig, baseConfig crawler.BaseCrawlerConfig, broker *messaging.NatsBroker) (*LKPPBlacklistCrawler, error) {
 
 	// Create the crawler
 	return &LKPPBlacklistCrawler{
 		BaseCrawler: crawler.BaseCrawler{
-			Config:        baseConfig,
-			MessageBroker: broker,
+			Config:          baseConfig,
+			MessageBroker:   broker,
+			UrlFrontierRepo: services.NewUrlFrontierRepository(db.Queries),
+			ExtractionRepo:  services.NewExtractionRepository(db.Queries),
+			DataSourceRepo:  services.NewDataSourceRepository(db.Queries),
+			StorageService:  storage.StorageClient,
 		},
-		Config:       config,
-		httpClient:   httpClient,
-		defaultDelay: time.Duration(config.Delay) * time.Millisecond,
+		Config: config,
 	}, nil
 }
 
@@ -82,7 +80,7 @@ func (c *LKPPBlacklistCrawler) CrawlAll(ctx context.Context) error {
 	// 3. Extract company details
 	// 4. Create URL frontiers for scrapers
 
-	return crawler.ErrNotImplemented
+	return common.ErrNotImplemented
 }
 
 // CrawlByKeyword crawls blacklisted companies by keyword
@@ -106,7 +104,7 @@ func (c *LKPPBlacklistCrawler) CrawlByKeyword(ctx context.Context, keyword strin
 	// 4. Extract results
 	// 5. Create URL frontiers
 
-	return crawler.ErrNotImplemented
+	return common.ErrNotImplemented
 }
 
 // CrawlByURL crawls a specific blacklisted company
@@ -118,7 +116,7 @@ func (c *LKPPBlacklistCrawler) CrawlByURL(ctx context.Context, url string) error
 	// 2. Extract company details
 	// 3. Create URL frontier
 
-	return crawler.ErrNotImplemented
+	return common.ErrNotImplemented
 }
 
 // Consume processes a message from a queue
@@ -130,25 +128,25 @@ func (c *LKPPBlacklistCrawler) Consume(ctx context.Context, message []byte) erro
 	// 2. Process it according to the crawler's logic
 	// 3. Create URL frontiers or perform other actions
 
-	return crawler.ErrNotImplemented
+	return common.ErrNotImplemented
 }
 
 // ExtractElements extracts URL frontiers from a page
-func (c *LKPPBlacklistCrawler) ExtractElements(ctx context.Context, page *rod.Element) (repository.UrlFrontier, error) {
+func (c *LKPPBlacklistCrawler) ExtractElements(ctx context.Context, element *rod.Element) (repository.UrlFrontier, error) {
 	log.Info().Msg("Extracting elements from LKPP blacklist page")
 
 	// In a real implementation, this would:
 	// 1. Extract company details from the page
 	// 2. Create URL frontiers for each company
 
-	return repository.UrlFrontier{}, crawler.ErrNotImplemented
+	return repository.UrlFrontier{}, common.ErrNotImplemented
 }
 
 // Navigate navigates to a URL
-func (c *LKPPBlacklistCrawler) CrawlPage(ctx context.Context, page *rod.Page, url string) error {
+func (c *LKPPBlacklistCrawler) CrawlPage(ctx context.Context, page *rod.Page, url string) ([]repository.UrlFrontier, error) {
 	log.Info().Msg("Navigating to LKPP blacklist URL")
 
 	// In a real implementation, this would use the browser to navigate to the URL
 
-	return nil
+	return []repository.UrlFrontier{}, common.ErrNotImplemented
 }

@@ -66,14 +66,14 @@ func TestModuleWithMockDB(t *testing.T) {
 	mockNats := NewMockNatsClient()
 
 	// Create a new module with the mock dependencies
-	mod := NewModule(mockDB.DB, mockNats.NatsClient)
+	mod := NewModule(mockDB.DB, mockNats.NatsBroker)
 
 	// Test the module
 	if mod.db != mockDB.DB {
 		t.Errorf("expected DB to be the mock DB instance")
 	}
 
-	if mod.natsClient != mockNats.NatsClient {
+	if mod.natsClient != mockNats.NatsBroker {
 		t.Errorf("expected NatsClient to be the mock NATS client instance")
 	}
 }
@@ -100,7 +100,7 @@ func (m *MockDB) Ping(ctx context.Context) error {
 
 // MockNatsClient implements the messaging.NatsClient for testing
 type MockNatsClient struct {
-	*messaging.NatsClient
+	*messaging.NatsBroker
 	PublishCalled bool
 	SubjectsSeen  []string
 }
@@ -108,7 +108,7 @@ type MockNatsClient struct {
 // NewMockNatsClient creates a new mock NATS client
 func NewMockNatsClient() *MockNatsClient {
 	return &MockNatsClient{
-		NatsClient:    &messaging.NatsClient{},
+		NatsBroker:    &messaging.NatsBroker{},
 		PublishCalled: false,
 		SubjectsSeen:  []string{},
 	}

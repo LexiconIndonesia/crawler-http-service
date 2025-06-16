@@ -1,7 +1,8 @@
-package indonesia_supreme_court
+package isc
 
 import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
+	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 )
@@ -14,8 +15,7 @@ func init() {
 }
 
 // CreateIndonesiaSupremeCourt creates a MahkamahAgungCrawler
-func CreateIndonesiaSupremeCourt(dataSource repository.DataSource, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (crawler.Crawler, error) {
-
+func CreateIndonesiaSupremeCourt(db *db.DB, dataSource repository.DataSource, baseConfig crawler.BaseCrawlerConfig, broker *messaging.NatsBroker) (crawler.Crawler, error) {
 	// generate config
 	config, err := crawler.UnmarshalIndonesiaSupremeCourtConfig(dataSource.Config)
 	if err != nil {
@@ -23,11 +23,10 @@ func CreateIndonesiaSupremeCourt(dataSource repository.DataSource, baseConfig cr
 	}
 
 	// Create and return the actual crawler implementation
-	return NewIndonesiaSupremeCourtCrawler(config, baseConfig, broker)
+	return NewIndonesiaSupremeCourtCrawler(db, config, baseConfig, broker)
 }
 
-func CreateIndonesiaSupremeCourtScraper(dataSource repository.DataSource, baseConfig crawler.BaseScraperConfig, broker messaging.MessageBroker) (crawler.Scraper, error) {
-
+func CreateIndonesiaSupremeCourtScraper(db *db.DB, dataSource repository.DataSource, baseConfig crawler.BaseScraperConfig, broker *messaging.NatsBroker) (crawler.Scraper, error) {
 	// generate config
 	config, err := crawler.UnmarshalIndonesiaSupremeCourtConfig(dataSource.Config)
 	if err != nil {
@@ -35,5 +34,5 @@ func CreateIndonesiaSupremeCourtScraper(dataSource repository.DataSource, baseCo
 	}
 
 	// Create and return the actual crawler implementation
-	return NewIndonesiaSupremeCourtScraper(config, baseConfig, broker)
+	return NewIndonesiaSupremeCourtScraper(db, config, baseConfig, broker)
 }

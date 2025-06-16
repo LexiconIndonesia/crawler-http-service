@@ -1,4 +1,4 @@
-package indonesia_supreme_court
+package isc
 
 import (
 	"fmt"
@@ -28,7 +28,6 @@ func (u *urlCrawler) copy() urlCrawler {
 		SortOrder:    u.SortOrder,
 		SearchPhrase: u.SearchPhrase,
 	}
-
 }
 
 func newUrlCrawler(baseUrl string) (urlCrawler, error) {
@@ -58,5 +57,4 @@ func newUrlCrawler(baseUrl string) (urlCrawler, error) {
 		CurrentPage:  currentPageInt,
 		SortOrder:    sortOrder,
 	}, nil
-
 }

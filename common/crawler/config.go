@@ -95,6 +95,8 @@ type SingaporeSupremeCourtConfig struct {
 	SortMethods    []string                `json:"sort_methods"`
 	SortOptions    []string                `json:"sort_options"`
 	ListQueryParam SingaporeListQueryParam `json:"list_query_param"`
+	MinDelayMs     int                     `json:"min_delay_ms"`
+	MaxDelayMs     int                     `json:"max_delay_ms"`
 }
 
 func (c SingaporeSupremeCourtConfig) Validate() error {

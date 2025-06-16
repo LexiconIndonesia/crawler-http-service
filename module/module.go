@@ -12,13 +12,13 @@ import (
 // Module represents a module with routes
 type Module struct {
 	db         *db.DB
-	natsClient *messaging.NatsClient
+	natsClient *messaging.NatsBroker
 	services   map[string]interface{} // Service registry for dependency injection
 	logService *logger.LogService
 }
 
 // NewModule creates a new module with dependency injection
-func NewModule(db *db.DB, natsClient *messaging.NatsClient) *Module {
+func NewModule(db *db.DB, natsClient *messaging.NatsBroker) *Module {
 	// Create the module
 	m := &Module{
 		db:         db,

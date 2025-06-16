@@ -1,7 +1,8 @@
-package lkpp_blacklist
+package lkpp
 
 import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
+	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 )
@@ -13,8 +14,7 @@ func init() {
 }
 
 // CreateLKPPBlacklistCrawler creates a LKPP blacklist crawler
-func CreateLKPPBlacklistCrawler(dataSource repository.DataSource, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (crawler.Crawler, error) {
-
+func CreateLKPPBlacklistCrawler(db *db.DB, dataSource repository.DataSource, baseConfig crawler.BaseCrawlerConfig, broker *messaging.NatsBroker) (crawler.Crawler, error) {
 	// TODO: Create the real config
 	lkppConfig := LKPPBlacklistConfig{
 		BaseConfig: crawler.BaseConfig{
@@ -29,5 +29,5 @@ func CreateLKPPBlacklistCrawler(dataSource repository.DataSource, baseConfig cra
 	}
 
 	// Create and return the actual crawler implementation
-	return NewLKPPBlacklistCrawler(lkppConfig, baseConfig, broker)
+	return NewLKPPBlacklistCrawler(db, lkppConfig, baseConfig, broker)
 }

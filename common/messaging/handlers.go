@@ -16,8 +16,8 @@ type MessageHandler func(msg *nats.Msg) error
 type JetStreamMessageHandler func(msg jetstream.Msg) error
 
 // SubscribeToAll subscribes to all NATS messages using the ">" wildcard
-func SubscribeToAll(client *NatsClient, handler MessageHandler) (*nats.Subscription, error) {
-	if client == nil || client.conn == nil {
+func SubscribeToAll(client *NatsBroker, handler MessageHandler) (*nats.Subscription, error) {
+	if client == nil || client.GetConn() == nil {
 		return nil, nil
 	}
 
@@ -43,8 +43,8 @@ func SubscribeToAll(client *NatsClient, handler MessageHandler) (*nats.Subscript
 }
 
 // SubscribeToSubject subscribes to a specific NATS subject
-func SubscribeToSubject(client *NatsClient, subject string, handler MessageHandler) (*nats.Subscription, error) {
-	if client == nil || client.conn == nil {
+func SubscribeToSubject(client *NatsBroker, subject string, handler MessageHandler) (*nats.Subscription, error) {
+	if client == nil || client.GetConn() == nil {
 		return nil, nil
 	}
 
@@ -70,8 +70,8 @@ func SubscribeToSubject(client *NatsClient, subject string, handler MessageHandl
 }
 
 // SubscribeToQueueGroup subscribes to a specific subject with a queue group
-func SubscribeToQueueGroup(client *NatsClient, subject, queue string, handler MessageHandler) (*nats.Subscription, error) {
-	if client == nil || client.conn == nil {
+func SubscribeToQueueGroup(client *NatsBroker, subject, queue string, handler MessageHandler) (*nats.Subscription, error) {
+	if client == nil || client.GetConn() == nil {
 		return nil, nil
 	}
 
@@ -101,7 +101,7 @@ func SubscribeToQueueGroup(client *NatsClient, subject, queue string, handler Me
 }
 
 // SubscribeToJetStream subscribes to a specific JetStream subject
-func SubscribeToJetStream(client *NatsClient, streamName, subject string, handler JetStreamMessageHandler) (jetstream.Consumer, error) {
+func SubscribeToJetStream(client *NatsBroker, streamName, subject string, handler JetStreamMessageHandler) (jetstream.Consumer, error) {
 	if client == nil || client.js == nil {
 		return nil, nil
 	}
@@ -163,13 +163,13 @@ func SubscribeToJetStream(client *NatsClient, streamName, subject string, handle
 }
 
 // SubscribeToAllJetStream subscribes to all JetStream messages in a stream
-func SubscribeToAllJetStream(client *NatsClient, streamName string, handler JetStreamMessageHandler) (jetstream.Consumer, error) {
+func SubscribeToAllJetStream(client *NatsBroker, streamName string, handler JetStreamMessageHandler) (jetstream.Consumer, error) {
 	// Same as SubscribeToJetStream but with ">" wildcard
 	return SubscribeToJetStream(client, streamName, ">", handler)
 }
 
 // EnsureStream ensures a stream exists with the specified subjects
-func EnsureStream(ctx context.Context, client *NatsClient, name string, subjects []string) (jetstream.Stream, error) {
+func EnsureStream(ctx context.Context, client *NatsBroker, name string, subjects []string) (jetstream.Stream, error) {
 	// Try to get the stream first
 	stream, err := client.GetStream(ctx, name)
 	if err == nil {

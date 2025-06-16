@@ -28,6 +28,9 @@ type UrlFrontierService interface {
 	// UpdateStatus updates the status of a URL frontier
 	UpdateStatus(ctx context.Context, id string, status models.UrlFrontierStatus, errorMessage string) error
 
+	// UpdateStatusBatch updates the status of a URL frontier by batch
+	UpdateStatusBatch(ctx context.Context, id []string, status models.UrlFrontierStatus, errorMessage string) error
+
 	// UpdateNextCrawl updates the next crawl time of a URL frontier
 	UpdateNextCrawl(ctx context.Context, id string, nextCrawlAt time.Time) error
 

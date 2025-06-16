@@ -37,7 +37,7 @@ SET
   updated_at = $14;
 
 -- Update status and increment attempts for URL frontiers
--- name: UpdateUrlFrontierStatus :batchexec
+-- name: UpdateUrlFrontierStatus :exec
 UPDATE url_frontiers
 SET
   status = $2,
@@ -46,6 +46,18 @@ SET
   error_message = $3,
   updated_at = $4
 WHERE id = $1;
+
+-- Update Status and increment by batch ids
+-- name: UpdateUrlFrontierStatusBatch :exec
+UPDATE url_frontiers
+SET
+  status = $2,
+  attempts = COALESCE(attempts, 0) + 1,
+  last_crawled_at = CURRENT_TIMESTAMP,
+  error_message = $3,
+  updated_at = $4
+WHERE id = ANY($1);
+
 
 -- Get unscrapped URL frontiers for a data source
 -- name: GetUnscrappedUrlFrontiers :many

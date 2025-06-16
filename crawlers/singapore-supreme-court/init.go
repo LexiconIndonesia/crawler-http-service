@@ -1,7 +1,8 @@
-package singapore_supreme_court
+package ssc
 
 import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
+	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/rs/zerolog/log"
@@ -15,8 +16,7 @@ func init() {
 }
 
 // CreateSingaporeSupremeCourtCrawler creates an E-Litigation crawler
-func CreateCrawler(dataSource repository.DataSource, baseConfig crawler.BaseCrawlerConfig, broker messaging.MessageBroker) (crawler.Crawler, error) {
-
+func CreateCrawler(db *db.DB, dataSource repository.DataSource, baseConfig crawler.BaseCrawlerConfig, broker *messaging.NatsBroker) (crawler.Crawler, error) {
 	log.Info().Msgf("Creating Singapore Supreme Court crawler for data source %s", dataSource.Name)
 	config, err := crawler.UnmarshalSingaporeSupremeCourtConfig(dataSource.Config)
 	if err != nil {
@@ -26,11 +26,10 @@ func CreateCrawler(dataSource repository.DataSource, baseConfig crawler.BaseCraw
 	}
 
 	// Create and return the actual crawler implementation
-	return NewSingaporeSupremeCourtCrawler(config, baseConfig, broker)
+	return NewSingaporeSupremeCourtCrawler(db, config, baseConfig, broker)
 }
 
-func CreateScraper(dataSource repository.DataSource, baseConfig crawler.BaseScraperConfig, broker messaging.MessageBroker) (crawler.Scraper, error) {
-
+func CreateScraper(db *db.DB, dataSource repository.DataSource, baseConfig crawler.BaseScraperConfig, broker *messaging.NatsBroker) (crawler.Scraper, error) {
 	log.Info().Msgf("Creating Singapore Supreme Court scraper for data source %s", dataSource.Name)
 	config, err := crawler.UnmarshalSingaporeSupremeCourtConfig(dataSource.Config)
 	if err != nil {
@@ -40,5 +39,5 @@ func CreateScraper(dataSource repository.DataSource, baseConfig crawler.BaseScra
 	}
 
 	// Create and return the actual scraper implementation
-	return NewSingaporeSupremeCourtScraper(config, baseConfig, broker)
+	return NewSingaporeSupremeCourtScraper(db, config, baseConfig, broker)
 }

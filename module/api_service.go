@@ -17,9 +17,9 @@ import (
 
 // ApiService provides API endpoints for the module
 type ApiService struct {
-	db         *db.DB
-	natsClient *messaging.NatsClient
-	services   map[string]interface{} // Injected services
+	db       *db.DB
+	broker   *messaging.NatsBroker
+	services map[string]interface{} // Injected services
 }
 
 // DataSourceRequest represents a request to create or update a data source
@@ -60,11 +60,11 @@ type CancelExtractorJobRequest struct {
 }
 
 // NewApiService creates a new API service with dependencies
-func NewApiService(db *db.DB, natsClient *messaging.NatsClient) *ApiService {
+func NewApiService(db *db.DB, broker *messaging.NatsBroker) *ApiService {
 	return &ApiService{
-		db:         db,
-		natsClient: natsClient,
-		services:   make(map[string]interface{}),
+		db:       db,
+		broker:   broker,
+		services: make(map[string]interface{}),
 	}
 }
 
@@ -186,7 +186,7 @@ func (s *ApiService) triggerCrawl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish to the crawl.search subject
-	err = s.natsClient.Publish("crawl.search", msgData)
+	err = s.broker.Publish("crawl.search", msgData)
 	if err != nil {
 		http.Error(w, "Failed to queue crawl job", http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to publish crawl message")
@@ -262,7 +262,7 @@ func (s *ApiService) startCrawler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish to the crawler.start subject
-	err = s.natsClient.Publish("crawler.start", msgData)
+	err = s.broker.Publish("crawler.start", msgData)
 	if err != nil {
 		http.Error(w, "Failed to queue crawler job", http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to publish crawler message")
@@ -300,7 +300,7 @@ func (s *ApiService) stopCrawler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish to the crawler.stop subject
-	err = s.natsClient.Publish("crawler.stop", msgData)
+	err = s.broker.Publish("crawler.stop", msgData)
 	if err != nil {
 		http.Error(w, "Failed to send stop signal", http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to publish stop message")
@@ -370,7 +370,7 @@ func (s *ApiService) triggerScraper(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Publish to the scraper.scrape subject
-	err = s.natsClient.Publish("scraper.scrape", msgData)
+	err = s.broker.Publish("scraper.scrape", msgData)
 	if err != nil {
 		http.Error(w, "Failed to queue scraper job", http.StatusInternalServerError)
 		log.Error().Err(err).Msg("Failed to publish scraper message")
@@ -433,7 +433,7 @@ func (s *ApiService) batchScrape(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Publish to the scraper.batch subject
-		err = s.natsClient.Publish("scraper.batch", msgData)
+		err = s.broker.Publish("scraper.batch", msgData)
 		if err != nil {
 			log.Error().Err(err).Msg("Failed to publish batch scraper message")
 			continue

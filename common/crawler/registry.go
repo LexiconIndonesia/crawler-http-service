@@ -26,7 +26,7 @@ func RegisterCrawler(name string, creator CrawlerCreator) {
 	crawlerRegistry[name] = creator
 }
 
-func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsClient, dbConn *db.DB) error {
+func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsBroker, dbConn *db.DB) error {
 
 	// get all datasources
 	dataSources, err := dbConn.Queries.GetActiveDataSources(ctx)
@@ -49,7 +49,7 @@ func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsClient, dbC
 		baseCrawlerConfig.DataSource = dataSource
 
 		// Create a new crawler
-		crawler, err := creator(dataSource, baseCrawlerConfig, nil)
+		crawler, err := creator(dbConn, dataSource, baseCrawlerConfig, natsClient)
 		if err != nil {
 			return fmt.Errorf("failed to create crawler: %w", err)
 		}
@@ -79,7 +79,7 @@ func RegisterScraper(name string, creator ScraperCreator) {
 	scraperRegistry[name] = creator
 }
 
-func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsClient, dbConn *db.DB) error {
+func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsBroker, dbConn *db.DB) error {
 
 	// get all datasources
 	dataSources, err := dbConn.Queries.GetActiveDataSources(ctx)
@@ -99,10 +99,10 @@ func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsClient, dbC
 		dataSource := datasourceMap[name]
 
 		baseScraperConfig := DefaultBaseScraperConfig()
-		baseScraperConfig.DataSourceID = dataSource.ID
+		baseScraperConfig.DataSource = dataSource
 
 		// Create a new scraper
-		scraper, err := creator(dataSource, baseScraperConfig, nil)
+		scraper, err := creator(dbConn, dataSource, baseScraperConfig, natsClient)
 		if err != nil {
 			return fmt.Errorf("failed to create scraper: %w", err)
 		}

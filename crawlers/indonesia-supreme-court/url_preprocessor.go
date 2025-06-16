@@ -1,4 +1,4 @@
-package indonesia_supreme_court
+package isc
 
 import (
 	"fmt"
@@ -10,7 +10,6 @@ import (
 )
 
 func extractBreadCrumbs(p *rod.Element) ([]string, error) {
-
 	breadcrumbs := []string{}
 	breadcrumbsElement, err := p.Elements("div:nth-child(1) > a")
 	if err != nil {

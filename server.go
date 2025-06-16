@@ -24,7 +24,7 @@ type AppHttpServer struct {
 	cfg        config.Config
 	server     *http.Server
 	db         *db.DB
-	natsClient *messaging.NatsClient
+	natsClient *messaging.NatsBroker
 }
 
 func NewAppHttpServer(cfg config.Config) (*AppHttpServer, error) {
@@ -66,7 +66,7 @@ func (s *AppHttpServer) SetDB(db *db.DB) {
 }
 
 // SetNatsClient sets the NATS client dependency
-func (s *AppHttpServer) SetNatsClient(client *messaging.NatsClient) {
+func (s *AppHttpServer) SetNatsClient(client *messaging.NatsBroker) {
 	s.natsClient = client
 }
 

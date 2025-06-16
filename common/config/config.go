@@ -176,6 +176,23 @@ func defaultRedisConfig() redisConfig {
 	}
 }
 
+type gcsConfig struct {
+	ProjectID       string
+	CredentialsFile string
+}
+
+func (g *gcsConfig) loadFromEnv() {
+	g.ProjectID = getEnv("GCS_PROJECT_ID", "")
+	g.CredentialsFile = getEnv("GCS_CREDENTIALS_FILE", "")
+}
+
+func defaultGcsConfig() gcsConfig {
+	return gcsConfig{
+		ProjectID:       "",
+		CredentialsFile: "",
+	}
+}
+
 type Config struct {
 	Host     hostConfig
 	Listen   listenConfig
@@ -183,6 +200,7 @@ type Config struct {
 	Security securityConfig
 	Nats     natsConfig
 	Redis    redisConfig
+	GCS      gcsConfig
 }
 
 func (c *Config) LoadFromEnv() {
@@ -192,6 +210,7 @@ func (c *Config) LoadFromEnv() {
 	c.Security.loadFromEnv()
 	c.Nats.loadFromEnv()
 	c.Redis.loadFromEnv()
+	c.GCS.loadFromEnv()
 }
 
 func DefaultConfig() Config {
@@ -202,5 +221,6 @@ func DefaultConfig() Config {
 		Security: defaultSecurityConfig(),
 		Nats:     defaultNatsConfig(),
 		Redis:    defaultRedisConfig(),
+		GCS:      defaultGcsConfig(),
 	}
 }

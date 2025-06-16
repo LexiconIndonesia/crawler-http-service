@@ -1,4 +1,4 @@
-package crawler
+package common
 
 import (
 	"errors"
@@ -16,4 +16,7 @@ var (
 
 	// ErrCrawlerFailed is returned when a crawler operation fails
 	ErrCrawlerFailed = errors.New("crawler operation failed")
+
+	// ErrNotImplemented is returned when a method is not implemented
+	ErrNotImplemented = errors.New("method not implemented")
 )
