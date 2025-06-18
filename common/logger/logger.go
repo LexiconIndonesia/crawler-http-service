@@ -83,6 +83,16 @@ func (h *CrawlerLogHook) logToDatabase(ctx context.Context, event LogEvent) erro
 		urlFrontierID = pgtype.Text{Valid: false}
 	}
 
+	var jobID pgtype.Text
+	if event.JobID != "" {
+		jobID = pgtype.Text{
+			String: event.JobID,
+			Valid:  true,
+		}
+	} else {
+		jobID = pgtype.Text{Valid: false}
+	}
+
 	// Create message if provided
 	message := pgtype.Text{
 		String: event.Message,
@@ -94,13 +104,15 @@ func (h *CrawlerLogHook) logToDatabase(ctx context.Context, event LogEvent) erro
 		ID:            logID,
 		DataSourceID:  event.DataSourceID,
 		UrlFrontierID: urlFrontierID,
+		JobsID:        jobID,
 		EventType:     event.EventType,
 		Message:       message,
 		Details:       detailsJSON,
 		CreatedAt:     time.Now(),
 	}
 
-	return h.db.Queries.CreateCrawlerLog(ctx, logParams)
+	_, err := h.db.Queries.CreateCrawlerLog(ctx, logParams)
+	return err
 }
 
 // ContextualCrawlerLogHook is an extension of the basic hook that can extract context
@@ -145,6 +157,10 @@ func (h *ContextualCrawlerLogHook) Run(e *zerolog.Event, level zerolog.Level, ms
 		// Try to extract urlFrontierID - often logged as "urlFrontierID=xyz"
 		if match := extractField(msg, "urlFrontierID"); match != "" {
 			logEvent.URLFrontierID = match
+		}
+
+		if match := extractField(msg, "jobID"); match != "" {
+			logEvent.JobID = match
 		}
 
 		// Extract any other details that might be in JSON format within the message
@@ -202,6 +218,7 @@ type LogService struct {
 type LogEvent struct {
 	DataSourceID  string
 	URLFrontierID string
+	JobID         string
 	EventType     string
 	Message       string
 	Details       interface{}
@@ -252,6 +269,16 @@ func (s *LogService) Log(ctx context.Context, event LogEvent) error {
 		urlFrontierID = pgtype.Text{Valid: false}
 	}
 
+	var jobID pgtype.Text
+	if event.JobID != "" {
+		jobID = pgtype.Text{
+			String: event.JobID,
+			Valid:  true,
+		}
+	} else {
+		jobID = pgtype.Text{Valid: false}
+	}
+
 	// Create message if provided
 	message := pgtype.Text{
 		String: event.Message,
@@ -263,13 +290,14 @@ func (s *LogService) Log(ctx context.Context, event LogEvent) error {
 		ID:            logID,
 		DataSourceID:  event.DataSourceID,
 		UrlFrontierID: urlFrontierID,
+		JobsID:        jobID,
 		EventType:     event.EventType,
 		Message:       message,
 		Details:       detailsJSON,
 		CreatedAt:     time.Now(),
 	}
 
-	if err := s.db.Queries.CreateCrawlerLog(ctx, logParams); err != nil {
+	if _, err := s.db.Queries.CreateCrawlerLog(ctx, logParams); err != nil {
 		log.Error().Err(err).Msg("Failed to insert log into database")
 		return err
 	}
@@ -283,6 +311,10 @@ func (s *LogService) Log(ctx context.Context, event LogEvent) error {
 
 	if event.URLFrontierID != "" {
 		logEntry = logEntry.Str("urlFrontierID", event.URLFrontierID)
+	}
+
+	if event.JobID != "" {
+		logEntry = logEntry.Str("jobID", event.JobID)
 	}
 
 	logEntry.
@@ -322,7 +354,7 @@ func (s *LogService) Error(ctx context.Context, dataSourceID, urlFrontierID, mes
 }
 
 // CrawlStart logs the start of a crawl operation
-func (s *LogService) CrawlStart(ctx context.Context, dataSourceID, keyword string) error {
+func (s *LogService) CrawlStart(ctx context.Context, dataSourceID, keyword, jobID string) error {
 	return s.Log(ctx, LogEvent{
 		DataSourceID: dataSourceID,
 		EventType:    "crawl.started",
@@ -330,6 +362,7 @@ func (s *LogService) CrawlStart(ctx context.Context, dataSourceID, keyword strin
 		Details: map[string]interface{}{
 			"keyword": keyword,
 		},
+		JobID: jobID,
 	})
 }
 

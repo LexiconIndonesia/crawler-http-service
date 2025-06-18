@@ -38,14 +38,14 @@ func DefaultBaseCrawlerConfig() BaseCrawlerConfig {
 	}
 }
 
-// BaseCrawler provides core infrastructure operations for all crawlers
+// BaseCrawler provides a foundation for all crawlers
 type BaseCrawler struct {
 	Config          BaseCrawlerConfig
 	MessageBroker   *messaging.NatsBroker
-	StorageService  storage.StorageService
 	UrlFrontierRepo services.UrlFrontierService
 	ExtractionRepo  services.ExtractionService
 	DataSourceRepo  services.DataSourceService
+	StorageService  storage.StorageService
 }
 
 // SaveUrlFrontier saves a URL frontier to the database

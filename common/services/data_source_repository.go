@@ -56,3 +56,38 @@ func (r *DataSourceRepository) GetByName(ctx context.Context, name string) (repo
 
 	return dataSource, nil
 }
+
+// Create creates a new data source
+func (r *DataSourceRepository) Create(ctx context.Context, arg repository.CreateDataSourceParams) (repository.DataSource, error) {
+	dataSource, err := r.db.CreateDataSource(ctx, arg)
+	if err != nil {
+		return repository.DataSource{}, err
+	}
+
+	return dataSource, nil
+}
+
+// Update updates a data source
+func (r *DataSourceRepository) Update(ctx context.Context, arg repository.UpdateDataSourceParams) (repository.DataSource, error) {
+	dataSource, err := r.db.UpdateDataSource(ctx, arg)
+	if err != nil {
+		return repository.DataSource{}, err
+	}
+
+	return dataSource, nil
+}
+
+// Delete deletes a data source
+func (r *DataSourceRepository) Delete(ctx context.Context, id string) error {
+	return r.db.DeleteDataSource(ctx, id)
+}
+
+// GetAll gets all data sources
+func (r *DataSourceRepository) GetAll(ctx context.Context) ([]repository.DataSource, error) {
+	dataSources, err := r.db.GetAllDataSources(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return dataSources, nil
+}

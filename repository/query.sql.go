@@ -12,10 +12,53 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createCrawlerLog = `-- name: CreateCrawlerLog :exec
+const countDataSources = `-- name: CountDataSources :one
+SELECT count(*)
+FROM data_sources
+WHERE
+    ($1::TEXT IS NULL OR name = $1)
+AND
+    ($2::TEXT IS NULL OR name ILIKE '%' || $2 || '%')
+AND deleted_at IS NULL
+`
 
-INSERT INTO crawler_logs (id, data_source_id, url_frontier_id, event_type, message, details, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+type CountDataSourcesParams struct {
+	DataSource pgtype.Text
+	Search     pgtype.Text
+}
+
+func (q *Queries) CountDataSources(ctx context.Context, arg CountDataSourcesParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDataSources, arg.DataSource, arg.Search)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countJobs = `-- name: CountJobs :one
+SELECT count(*) FROM jobs
+WHERE
+    ($1::text IS NULL OR status = $1)
+AND
+    ($2::text IS NULL OR id::text ILIKE '%' || $2 || '%')
+`
+
+type CountJobsParams struct {
+	Status pgtype.Text
+	Search pgtype.Text
+}
+
+func (q *Queries) CountJobs(ctx context.Context, arg CountJobsParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countJobs, arg.Status, arg.Search)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createCrawlerLog = `-- name: CreateCrawlerLog :one
+
+INSERT INTO crawler_logs (id, data_source_id, url_frontier_id,  event_type, message, details, created_at, jobs_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, data_source_id, url_frontier_id, jobs_id, event_type, message, details, created_at
 `
 
 type CreateCrawlerLogParams struct {
@@ -26,14 +69,15 @@ type CreateCrawlerLogParams struct {
 	Message       pgtype.Text
 	Details       []byte
 	CreatedAt     time.Time
+	JobsID        pgtype.Text
 }
 
 // =============================================
 // Crawler Logs Table Operations
 // =============================================
 // Create a new crawler log entry
-func (q *Queries) CreateCrawlerLog(ctx context.Context, arg CreateCrawlerLogParams) error {
-	_, err := q.db.Exec(ctx, createCrawlerLog,
+func (q *Queries) CreateCrawlerLog(ctx context.Context, arg CreateCrawlerLogParams) (CrawlerLog, error) {
+	row := q.db.QueryRow(ctx, createCrawlerLog,
 		arg.ID,
 		arg.DataSourceID,
 		arg.UrlFrontierID,
@@ -41,8 +85,70 @@ func (q *Queries) CreateCrawlerLog(ctx context.Context, arg CreateCrawlerLogPara
 		arg.Message,
 		arg.Details,
 		arg.CreatedAt,
+		arg.JobsID,
 	)
-	return err
+	var i CrawlerLog
+	err := row.Scan(
+		&i.ID,
+		&i.DataSourceID,
+		&i.UrlFrontierID,
+		&i.JobsID,
+		&i.EventType,
+		&i.Message,
+		&i.Details,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const createDataSource = `-- name: CreateDataSource :one
+INSERT INTO data_sources (id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at, deleted_at
+`
+
+type CreateDataSourceParams struct {
+	ID          string
+	Name        string
+	Country     string
+	SourceType  string
+	BaseUrl     pgtype.Text
+	Description pgtype.Text
+	Config      []byte
+	IsActive    bool
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// Create a new data source
+func (q *Queries) CreateDataSource(ctx context.Context, arg CreateDataSourceParams) (DataSource, error) {
+	row := q.db.QueryRow(ctx, createDataSource,
+		arg.ID,
+		arg.Name,
+		arg.Country,
+		arg.SourceType,
+		arg.BaseUrl,
+		arg.Description,
+		arg.Config,
+		arg.IsActive,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var i DataSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Country,
+		&i.SourceType,
+		&i.BaseUrl,
+		&i.Description,
+		&i.Config,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
 }
 
 const createExtractionVersion = `-- name: CreateExtractionVersion :exec
@@ -86,10 +192,55 @@ func (q *Queries) CreateExtractionVersion(ctx context.Context, arg CreateExtract
 	return err
 }
 
+const createJob = `-- name: CreateJob :one
+
+INSERT INTO jobs (
+    id,
+    status
+) VALUES (
+    $1, $2
+) RETURNING id, status, created_at, updated_at, started_at, finished_at
+`
+
+type CreateJobParams struct {
+	ID     string
+	Status string
+}
+
+// =============================================
+// Jobs Table Operations
+// =============================================
+// Create a new job (queued)
+func (q *Queries) CreateJob(ctx context.Context, arg CreateJobParams) (Job, error) {
+	row := q.db.QueryRow(ctx, createJob, arg.ID, arg.Status)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
+}
+
+const deleteDataSource = `-- name: DeleteDataSource :exec
+UPDATE data_sources
+SET deleted_at = NOW()
+WHERE id = $1
+`
+
+// Soft delete a data source by ID
+func (q *Queries) DeleteDataSource(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, deleteDataSource, id)
+	return err
+}
+
 const getActiveDataSources = `-- name: GetActiveDataSources :many
-SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at
+SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at, deleted_at
 FROM data_sources
-WHERE is_active = true
+WHERE is_active = true AND deleted_at IS NULL
 `
 
 // Get all active data sources
@@ -113,6 +264,78 @@ func (q *Queries) GetActiveDataSources(ctx context.Context) ([]DataSource, error
 			&i.IsActive,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getAllDataSources = `-- name: GetAllDataSources :many
+SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at, deleted_at FROM data_sources
+`
+
+// Get all data sources, including deleted ones
+func (q *Queries) GetAllDataSources(ctx context.Context) ([]DataSource, error) {
+	rows, err := q.db.Query(ctx, getAllDataSources)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DataSource
+	for rows.Next() {
+		var i DataSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Country,
+			&i.SourceType,
+			&i.BaseUrl,
+			&i.Description,
+			&i.Config,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getCrawlerLogsByJobId = `-- name: GetCrawlerLogsByJobId :many
+SELECT id, data_source_id, url_frontier_id, jobs_id, event_type, message, details, created_at FROM crawler_logs WHERE jobs_id = $1 ORDER BY created_at DESC
+`
+
+// Get crawler logs by job ID
+func (q *Queries) GetCrawlerLogsByJobId(ctx context.Context, jobsID pgtype.Text) ([]CrawlerLog, error) {
+	rows, err := q.db.Query(ctx, getCrawlerLogsByJobId, jobsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CrawlerLog
+	for rows.Next() {
+		var i CrawlerLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.DataSourceID,
+			&i.UrlFrontierID,
+			&i.JobsID,
+			&i.EventType,
+			&i.Message,
+			&i.Details,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -126,7 +349,7 @@ func (q *Queries) GetActiveDataSources(ctx context.Context) ([]DataSource, error
 
 const getDataSourceById = `-- name: GetDataSourceById :one
 
-SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at
+SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at, deleted_at
 FROM data_sources
 WHERE id = $1
 LIMIT 1
@@ -150,14 +373,15 @@ func (q *Queries) GetDataSourceById(ctx context.Context, id string) (DataSource,
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getDataSourceByName = `-- name: GetDataSourceByName :one
-SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at
+SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at, deleted_at
 FROM data_sources
-WHERE name = $1
+WHERE name = $1 AND deleted_at IS NULL
 LIMIT 1
 `
 
@@ -176,6 +400,7 @@ func (q *Queries) GetDataSourceByName(ctx context.Context, name string) (DataSou
 		&i.IsActive,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -253,6 +478,25 @@ func (q *Queries) GetExtractionsByUrlFrontierID(ctx context.Context, urlFrontier
 		return nil, err
 	}
 	return items, nil
+}
+
+const getJobByID = `-- name: GetJobByID :one
+SELECT id, status, created_at, updated_at, started_at, finished_at FROM jobs
+WHERE id = $1
+`
+
+func (q *Queries) GetJobByID(ctx context.Context, id string) (Job, error) {
+	row := q.db.QueryRow(ctx, getJobByID, id)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
+	)
+	return i, err
 }
 
 const getUnscrappedUrlFrontiers = `-- name: GetUnscrappedUrlFrontiers :many
@@ -362,6 +606,200 @@ func (q *Queries) GetUrlFrontierByUrl(ctx context.Context, url string) (UrlFront
 		&i.Metadata,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listDataSources = `-- name: ListDataSources :many
+SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at, deleted_at
+FROM data_sources
+WHERE
+    ($1::TEXT IS NULL OR name = $1)
+AND
+    ($2::TEXT IS NULL OR name ILIKE '%' || $2 || '%')
+AND deleted_at IS NULL
+ORDER BY
+    name ASC
+LIMIT $4
+OFFSET $3
+`
+
+type ListDataSourcesParams struct {
+	DataSource pgtype.Text
+	Search     pgtype.Text
+	Offset     int32
+	Limit      int32
+}
+
+func (q *Queries) ListDataSources(ctx context.Context, arg ListDataSourcesParams) ([]DataSource, error) {
+	rows, err := q.db.Query(ctx, listDataSources,
+		arg.DataSource,
+		arg.Search,
+		arg.Offset,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DataSource
+	for rows.Next() {
+		var i DataSource
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Country,
+			&i.SourceType,
+			&i.BaseUrl,
+			&i.Description,
+			&i.Config,
+			&i.IsActive,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.DeletedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listJobs = `-- name: ListJobs :many
+SELECT id, status, created_at, updated_at, started_at, finished_at FROM jobs
+WHERE
+    ($3::text IS NULL OR status = $3)
+AND
+    ($4::text IS NULL OR id::text ILIKE '%' || $4 || '%')
+ORDER BY updated_at DESC
+LIMIT $1
+OFFSET $2
+`
+
+type ListJobsParams struct {
+	Limit  int32
+	Offset int32
+	Status pgtype.Text
+	Search pgtype.Text
+}
+
+func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error) {
+	rows, err := q.db.Query(ctx, listJobs,
+		arg.Limit,
+		arg.Offset,
+		arg.Status,
+		arg.Search,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Job
+	for rows.Next() {
+		var i Job
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.StartedAt,
+			&i.FinishedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateDataSource = `-- name: UpdateDataSource :one
+UPDATE data_sources
+SET
+  name = $2,
+  country = $3,
+  source_type = $4,
+  base_url = $5,
+  description = $6,
+  config = $7,
+  is_active = $8,
+  updated_at = $9
+WHERE id = $1
+RETURNING id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at, deleted_at
+`
+
+type UpdateDataSourceParams struct {
+	ID          string
+	Name        string
+	Country     string
+	SourceType  string
+	BaseUrl     pgtype.Text
+	Description pgtype.Text
+	Config      []byte
+	IsActive    bool
+	UpdatedAt   time.Time
+}
+
+// Update an existing data source
+func (q *Queries) UpdateDataSource(ctx context.Context, arg UpdateDataSourceParams) (DataSource, error) {
+	row := q.db.QueryRow(ctx, updateDataSource,
+		arg.ID,
+		arg.Name,
+		arg.Country,
+		arg.SourceType,
+		arg.BaseUrl,
+		arg.Description,
+		arg.Config,
+		arg.IsActive,
+		arg.UpdatedAt,
+	)
+	var i DataSource
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Country,
+		&i.SourceType,
+		&i.BaseUrl,
+		&i.Description,
+		&i.Config,
+		&i.IsActive,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
+const updateJobStatus = `-- name: UpdateJobStatus :one
+UPDATE jobs
+SET
+    status = $2,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, status, created_at, updated_at, started_at, finished_at
+`
+
+type UpdateJobStatusParams struct {
+	ID     string
+	Status string
+}
+
+// Update job status and updated_at timestamp
+func (q *Queries) UpdateJobStatus(ctx context.Context, arg UpdateJobStatusParams) (Job, error) {
+	row := q.db.QueryRow(ctx, updateJobStatus, arg.ID, arg.Status)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.StartedAt,
+		&i.FinishedAt,
 	)
 	return i, err
 }

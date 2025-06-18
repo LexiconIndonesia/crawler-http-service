@@ -13,6 +13,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/logger"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/common/redis"
 	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
 
 	"github.com/rs/zerolog/log"
@@ -78,6 +79,13 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to setup NATS client")
 	}
 	defer natsClient.Close()
+
+	// INITIATE REDIS CLIENT
+	redisClient, err := redis.NewClient(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to setup Redis client")
+	}
+	defer redisClient.Close()
 
 	// Setup global subscriptions
 	if err := messaging.SetupGlobalSubscriptions(natsClient); err != nil {

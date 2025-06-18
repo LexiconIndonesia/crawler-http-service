@@ -9,6 +9,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/common/services"
 	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
+	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
 	"github.com/rs/zerolog/log"
@@ -17,8 +18,9 @@ import (
 // IndonesiaSupremeCourtCrawler is a crawler for the Indonesia Supreme Court
 type IndonesiaSupremeCourtCrawler struct {
 	crawler.BaseCrawler
-	Config  crawler.IndonesiaSupremeCourtConfig
-	browser *rod.Browser
+	Config      crawler.IndonesiaSupremeCourtConfig
+	browser     *rod.Browser
+	workManager *work.WorkManager
 }
 
 // NewMahkamahAgungCrawler creates a newIndonesiaSupremeCourtCrawler
@@ -33,7 +35,8 @@ func NewIndonesiaSupremeCourtCrawler(db *db.DB, config crawler.IndonesiaSupremeC
 			DataSourceRepo:  services.NewDataSourceRepository(db.Queries),
 			StorageService:  storage.StorageClient,
 		},
-		Config: config,
+		Config:      config,
+		workManager: work.NewWorkManager(db),
 	}, nil
 }
 
@@ -62,21 +65,21 @@ func (c *IndonesiaSupremeCourtCrawler) Teardown(ctx context.Context) error {
 }
 
 // CrawlAll crawls all pages from the Indonesia Supreme Court
-func (c *IndonesiaSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
+func (c *IndonesiaSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID string) error {
 	// Not implemented as per requirements
 	log.Error().Msg("CrawlAll method not implemented")
 	return common.ErrNotImplemented
 }
 
 // CrawlByKeyword crawls pages from the Indonesia Supreme Court based on a search term
-func (c *IndonesiaSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keyword string) error {
+func (c *IndonesiaSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keyword string, jobID string) error {
 	// Not implemented as per requirements
 	log.Error().Msg("CrawlByKeyword method not implemented")
 	return common.ErrNotImplemented
 }
 
 // CrawlByURL crawls a specific URL from the Indonesia Supreme Court
-func (c *IndonesiaSupremeCourtCrawler) CrawlByURL(ctx context.Context, url string) error {
+func (c *IndonesiaSupremeCourtCrawler) CrawlByURL(ctx context.Context, url string, jobID string) error {
 	log.Info().Str("url", url).Msg("Crawling specific Indonesia Supreme Court URL")
 
 	return nil
@@ -96,7 +99,7 @@ func (c *IndonesiaSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 
 // Consume processes a message from a queue
 func (c *IndonesiaSupremeCourtCrawler) Consume(ctx context.Context, message []byte) error {
-	log.Info().Msg("Processing Mahkamah Agung message from queue")
+	log.Info().Msg("Processing Indonesia Supreme Court message from queue")
 
 	// In a real implementation, this would:
 	// 1. Unmarshal the message (likely a URL frontier or instruction)

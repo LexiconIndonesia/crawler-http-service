@@ -2,14 +2,17 @@ package isc
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common"
+	"github.com/LexiconIndonesia/crawler-http-service/common/constants"
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
-	"github.com/LexiconIndonesia/crawler-http-service/common/models"
 	"github.com/LexiconIndonesia/crawler-http-service/common/services"
 	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
+	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
@@ -19,8 +22,9 @@ import (
 // IndonesiaSupremeCourtScraper is a scraper for the Indonesia Supreme Court
 type IndonesiaSupremeCourtScraper struct {
 	crawler.BaseScraper
-	Config  crawler.IndonesiaSupremeCourtConfig
-	browser *rod.Browser
+	Config      crawler.IndonesiaSupremeCourtConfig
+	browser     *rod.Browser
+	workManager *work.WorkManager
 }
 
 // NewIndonesiaSupremeCourtScraper creates a new IndonesiaSupremeCourtScraper
@@ -35,7 +39,8 @@ func NewIndonesiaSupremeCourtScraper(db *db.DB, config crawler.IndonesiaSupremeC
 			DataSourceRepo:  services.NewDataSourceRepository(db.Queries),
 			StorageService:  storage.StorageClient,
 		},
-		Config: config,
+		Config:      config,
+		workManager: work.NewWorkManager(db),
 	}, nil
 }
 
@@ -63,14 +68,14 @@ func (s *IndonesiaSupremeCourtScraper) Teardown(ctx context.Context) error {
 }
 
 // ScrapeAll scrapes all pending URLs for Singapore Supreme Court
-func (s *IndonesiaSupremeCourtScraper) ScrapeAll(ctx context.Context) error {
+func (s *IndonesiaSupremeCourtScraper) ScrapeAll(ctx context.Context, jobID string) error {
 	// Not implemented as per requirements
 	log.Error().Msg("ScrapeAll method not implemented")
 	return common.ErrNotImplemented
 }
 
 // ScrapeByURLFrontierID scrapes a specific URL frontier by ID
-func (s *IndonesiaSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context, id string) error {
+func (s *IndonesiaSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context, id string, jobID string) error {
 	// Not implemented as per requirements
 	log.Error().Msg("ScrapeByUrlFrontierID method not implemented")
 	return common.ErrNotImplemented
@@ -78,40 +83,32 @@ func (s *IndonesiaSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context
 
 // Consume processes a message from a queue
 func (s *IndonesiaSupremeCourtScraper) Consume(ctx context.Context, message []byte) error {
-	log.Info().Msg("Processing Singapore Supreme Court message from queue")
+	log.Info().Msg("Processing Indonesia Supreme Court message from queue")
 
-	// In a real implementation, this would:
-	// 1. Unmarshal the message (likely a URL frontier or instruction)
-	// 2. Process it according to the scraper's logic
-	// 3. Create URL frontiers or perform other actions
+	var req messaging.ScrapeRequest
+	if err := json.Unmarshal(message, &req); err != nil {
+		log.Error().Err(err).Msg("Failed to unmarshal scrape request")
+		return err
+	}
 
-	return common.ErrNotImplemented
+	switch req.Type {
+	case constants.ScrapeAllAction:
+		return s.ScrapeAll(ctx, req.ID)
+	case constants.ScrapeByIDAction:
+		if req.Payload.URLFrontierID == "" {
+			err := fmt.Errorf("URLFrontierID is required for action %s", req.Type)
+			log.Error().Err(err).Msg("Invalid scrape request")
+			return err
+		}
+		return s.ScrapeByURLFrontierID(ctx, req.Payload.URLFrontierID, req.ID)
+	default:
+		err := fmt.Errorf("unsupported action type: %s", req.Type)
+		log.Error().Err(err).Msg("Unsupported scrape request")
+		return err
+	}
 }
 
-// ExtractElements extracts data from a page
-func (s *IndonesiaSupremeCourtScraper) ExtractElements(ctx context.Context, page *rod.Page) ([]repository.Extraction, error) {
-	// Not implemented as per requirements
-	log.Error().Msg("ExtractElements method not implemented")
-	return nil, common.ErrNotImplemented
-}
-
-// ExtractArtifactsFromPage extracts and downloads artifacts from a page
-func (s *IndonesiaSupremeCourtScraper) ExtractArtifactsFromPage(ctx context.Context, page *rod.Page) ([]models.ExtractionArtifact, error) {
-	// Not implemented as per requirements
-	log.Error().Msg("ExtractArtifactsFromPage method not implemented")
-	return nil, common.ErrNotImplemented
-}
-
-// Navigate navigates to a URL and returns the page
-func (s *IndonesiaSupremeCourtScraper) Navigate(ctx context.Context, url string) (*rod.Page, error) {
-	log.Info().Str("url", url).Msg("Navigating to Singapore Supreme Court URL")
-
-	// This might be replaced with an API call for API-based scrapers
-
-	return nil, common.ErrNotImplemented
-}
-
-func (s *IndonesiaSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod.Page, url repository.UrlFrontier) (repository.Extraction, error) {
+func (s *IndonesiaSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod.Page, url repository.UrlFrontier, jobID string) (repository.Extraction, error) {
 	log.Info().Str("url", url.Url).Msg("Scraping Singapore Supreme Court page")
 
 	return repository.Extraction{}, common.ErrNotImplemented

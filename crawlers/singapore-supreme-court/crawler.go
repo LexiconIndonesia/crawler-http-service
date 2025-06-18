@@ -28,8 +28,9 @@ import (
 // SingaporeSupremeCourtCrawler is a crawler for the Singapore E-Litigation system
 type SingaporeSupremeCourtCrawler struct {
 	crawler.BaseCrawler
-	Config  crawler.SingaporeSupremeCourtConfig
-	browser *rod.Browser
+	Config      crawler.SingaporeSupremeCourtConfig
+	browser     *rod.Browser
+	workManager *work.WorkManager
 }
 
 // NewELitigationCrawler creates a new SingaporeSupremeCourtCrawler
@@ -44,7 +45,8 @@ func NewSingaporeSupremeCourtCrawler(db *db.DB, config crawler.SingaporeSupremeC
 			DataSourceRepo:  services.NewDataSourceRepository(db.Queries),
 			StorageService:  storage.StorageClient,
 		},
-		Config: config,
+		Config:      config,
+		workManager: work.NewWorkManager(db),
 	}, nil
 }
 
@@ -75,8 +77,13 @@ func (c *SingaporeSupremeCourtCrawler) Teardown(ctx context.Context) error {
 }
 
 // CrawlAll crawls all available judgments
-func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
-	log.Info().Str("dataSource", c.BaseCrawler.Config.DataSource.Name).Msg("Crawling all judgments")
+func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID string) error {
+	l := log.Info().
+		Str("dataSource", c.BaseCrawler.Config.DataSource.Name).
+		Str("jobID", jobID)
+
+	l.Msg("Start Crawling all judgments")
+
 	startUrl, err := newStartURLCrawler(c.BaseCrawler.Config, c.Config)
 	if err != nil {
 		log.Err(err).Msg("Error creating URL crawler")
@@ -109,12 +116,16 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
 	defer cancel() // Ensure all resources are cleaned up
 
 	// Create type-safe worker pool for crawling tasks (no meaningful return value)
-	workerPool, err := work.NewWorkerPool[[]repository.UrlFrontier](c.BaseCrawler.Config.MaxConcurrency, c.BaseCrawler.Config.MaxConcurrency)
+	poolConfig := work.PoolConfig{
+		NumWorkers:  c.BaseCrawler.Config.MaxConcurrency,
+		WorkManager: c.workManager,
+	}
+	workerPool, err := work.NewWorkerPoolWithConfig[[]repository.UrlFrontier](poolConfig)
 	if err != nil {
 		return err
 	}
 
-	workerPool.Start(ctx, "singapore-supreme-court-crawler")
+	workerPool.Start(ctx, jobID)
 	defer workerPool.Stop()
 
 	// Process results in a separate goroutine
@@ -125,7 +136,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
 
 		for result := range workerPool.Results() {
 			if result.IsSuccess() {
-				log.Info().
+				l.
 					Str("taskID", result.TaskID).
 					Dur("duration", result.Duration).
 					Msg("Crawling task completed successfully")
@@ -138,22 +149,25 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
 					if err != nil {
 						log.Error().
 							Err(err).
+							Str("jobID", jobID).
 							Str("taskID", result.TaskID).
 							Int("numFrontiers", len(urlFrontiers)).
 							Msg("Failed to save URL frontier batch")
 					} else {
-						log.Info().
+						l.
 							Str("taskID", result.TaskID).
 							Int("numSaved", len(savedFrontiers)).
 							Msg("Successfully saved URL frontier batch")
 					}
 				} else {
 					log.Debug().
+						Str("jobID", jobID).
 						Str("taskID", result.TaskID).
 						Msg("Crawling task returned no UrlFrontiers to save")
 				}
 			} else {
 				log.Error().
+					Str("jobID", jobID).
 					Str("taskID", result.TaskID).
 					Err(result.Error).
 					Dur("duration", result.Duration).
@@ -189,6 +203,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
 			work.WithErrorHandler[[]repository.UrlFrontier](func(err error) {
 				log.Err(err).
 					Str("url", crawlURL.constructURL()).
+					Str("jobID", jobID).
 					Str("taskID", taskID).
 					Msg("Error crawling URL")
 			}),
@@ -198,8 +213,9 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
 		if err != nil {
 			log.Error().
 				Err(err).
-				Str("url", crawlURL.constructURL()).
+				Str("jobID", jobID).
 				Str("taskID", taskID).
+				Str("url", crawlURL.constructURL()).
 				Msg("Failed to create crawling task")
 			continue
 		}
@@ -208,14 +224,16 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
 		if err := workerPool.AddTaskNonBlocking(task); err != nil {
 			log.Warn().
 				Err(err).
-				Str("url", crawlURL.constructURL()).
+				Str("jobID", jobID).
 				Str("taskID", taskID).
+				Str("url", crawlURL.constructURL()).
 				Msg("Failed to add crawling task - queue might be full")
 
 			// If non-blocking fails, try with context-aware blocking
 			if err := workerPool.AddTask(ctx, task); err != nil {
 				log.Error().
 					Err(err).
+					Str("jobID", jobID).
 					Str("url", crawlURL.constructURL()).
 					Str("taskID", taskID).
 					Msg("Failed to add crawling task - stopping")
@@ -224,32 +242,40 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context) error {
 		}
 	}
 
-	// Give tasks time to complete before checking final stats
-	log.Info().Int("totalTasks", len(urlList)).Msg("All tasks queued, waiting for completion")
-	time.Sleep(5 * time.Second)
+	defer func() {
 
-	// Wait for all tasks to complete or context cancellation
-	select {
-	case <-ctx.Done():
-		log.Info().Msg("Crawling cancelled by context")
-		return ctx.Err()
-	default:
 		// Print final statistics
 		stats := workerPool.Stats()
-		log.Info().
+		l.
 			Int64("tasksCompleted", stats.TasksCompleted).
 			Int64("tasksQueued", stats.TasksQueued).
 			Int64("activeWorkers", stats.ActiveWorkers).
 			Int("totalUrlsProcessed", len(urlList)).
 			Msg("Crawling session completed")
-	}
+	}()
+
+	l.
+		Int("totalTasks", len(urlList)).
+		Msg("All tasks queued, waiting for completion")
 
 	return nil
 }
 
 // CrawlByKeyword crawls judgments by keyword
-func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keyword string) error {
-	log.Info().Str("keyword", keyword).Str("dataSource", c.BaseCrawler.Config.DataSource.Name).Msg("Crawling judgments by keyword")
+func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keyword, jobID string) error {
+	l := log.Info().
+		Str("dataSource", c.BaseCrawler.Config.DataSource.Name).
+		Str("keyword", keyword).
+		Str("jobID", jobID)
+
+	l.Msg("Start Crawling by keyword")
+
+	// Update the work manager to signal that the work has started
+	// The jobID is used as the workID
+	if err := c.workManager.Start(ctx, jobID); err != nil {
+		log.Error().Err(err).Str("jobID", jobID).Msg("Failed to start work in manager")
+		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
+	}
 
 	// Validate keyword
 	if keyword == "" {
@@ -283,7 +309,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 
 	lastPageInt, totalResult := lastPage.Unpack()
 
-	log.Info().Str("keyword", keyword).Msg("Total result: " + strconv.Itoa(totalResult))
+	l.Msg("Total result: " + strconv.Itoa(totalResult))
 
 	urlList := generateUrls(startUrl, startUrl.currentPage, lastPageInt)
 
@@ -292,12 +318,16 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 	defer cancel() // Ensure all resources are cleaned up
 
 	// Create type-safe worker pool for crawling tasks
-	workerPool, err := work.NewWorkerPool[[]repository.UrlFrontier](c.BaseCrawler.Config.MaxConcurrency, c.BaseCrawler.Config.MaxConcurrency)
+	poolConfig := work.PoolConfig{
+		NumWorkers:  c.BaseCrawler.Config.MaxConcurrency,
+		WorkManager: c.workManager,
+	}
+	workerPool, err := work.NewWorkerPoolWithConfig[[]repository.UrlFrontier](poolConfig)
 	if err != nil {
 		return err
 	}
 
-	workerPool.Start(ctx, "singapore-supreme-court-keyword-crawler")
+	workerPool.Start(ctx, jobID)
 	defer workerPool.Stop()
 
 	// Process results in a separate goroutine
@@ -308,9 +338,8 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 
 		for result := range workerPool.Results() {
 			if result.IsSuccess() {
-				log.Info().
+				l.
 					Str("taskID", result.TaskID).
-					Str("keyword", keyword).
 					Dur("duration", result.Duration).
 					Msg("Keyword crawling task completed successfully")
 
@@ -327,9 +356,8 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 							Int("numFrontiers", len(urlFrontiers)).
 							Msg("Failed to save URL frontier batch for keyword search")
 					} else {
-						log.Info().
+						l.
 							Str("taskID", result.TaskID).
-							Str("keyword", keyword).
 							Int("numSaved", len(savedFrontiers)).
 							Msg("Successfully saved URL frontier batch for keyword search")
 					}
@@ -417,15 +445,12 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 	}
 
 	// Give tasks time to complete before checking final stats
-	log.Info().Int("totalTasks", len(urlList)).Str("keyword", keyword).Msg("All keyword search tasks queued, waiting for completion")
-	time.Sleep(5 * time.Second)
+	l.
+		Int("totalTasks", len(urlList)).
+		Msg("All keyword search tasks queued, waiting for completion")
 
-	// Wait for all tasks to complete or context cancellation
-	select {
-	case <-ctx.Done():
-		log.Info().Str("keyword", keyword).Msg("Keyword crawling cancelled by context")
-		return ctx.Err()
-	default:
+	defer func() {
+
 		// Print final statistics
 		stats := workerPool.Stats()
 		log.Info().
@@ -435,14 +460,19 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 			Int("totalUrlsProcessed", len(urlList)).
 			Str("keyword", keyword).
 			Msg("Keyword crawling session completed")
-	}
+	}()
 
 	return nil
 }
 
 // CrawlByURL crawls a specific URL
-func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url string) error {
-	log.Info().Str("url", url).Str("dataSource", c.BaseCrawler.Config.DataSource.Name).Msg("Crawling specific URL")
+func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url, jobID string) error {
+	l := log.Info().
+		Str("url", url).
+		Str("dataSource", c.BaseCrawler.Config.DataSource.Name).
+		Str("jobID", jobID)
+
+	l.Msg("Start Crawling by URL")
 
 	// Validate URL
 	if url == "" {
@@ -462,28 +492,27 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url strin
 	defer cancel() // Ensure all resources are cleaned up
 
 	// Create type-safe worker pool for single URL crawling task
-	workerPool, err := work.NewWorkerPool[[]repository.UrlFrontier](1, 1)
+	poolConfig := work.PoolConfig{
+		NumWorkers:  1,
+		WorkManager: c.workManager,
+	}
+	workerPool, err := work.NewWorkerPoolWithConfig[[]repository.UrlFrontier](poolConfig)
 	if err != nil {
 		return err
 	}
 
-	workerPool.Start(ctx, "singapore-supreme-court-single-url-crawler")
+	workerPool.Start(ctx, jobID)
 	defer workerPool.Stop()
-
-	// Process results in a separate goroutine
-	errorsChan := make(chan error, 1)
 
 	go func() {
 		defer func() {
 			log.Debug().Msg("Single URL result processing goroutine completed")
-			close(errorsChan)
 		}()
 
 		for result := range workerPool.Results() {
 			if result.IsSuccess() {
-				log.Info().
+				l.
 					Str("taskID", result.TaskID).
-					Str("url", url).
 					Dur("duration", result.Duration).
 					Msg("Single URL crawling task completed successfully")
 
@@ -499,12 +528,10 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url strin
 							Str("url", url).
 							Int("numFrontiers", len(urlFrontiers)).
 							Msg("Failed to save URL frontier batch for single URL")
-						errorsChan <- err
 						return
 					} else {
-						log.Info().
+						l.
 							Str("taskID", result.TaskID).
-							Str("url", url).
 							Int("numSaved", len(savedFrontiers)).
 							Msg("Successfully saved URL frontier batch for single URL")
 					}
@@ -522,7 +549,6 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url strin
 					Err(result.Error).
 					Dur("duration", result.Duration).
 					Msg("Single URL crawling task failed")
-				errorsChan <- result.Error
 			}
 		}
 	}()
@@ -576,15 +602,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url strin
 	}
 
 	// Wait for the result or context cancellation
-	select {
-	case <-ctx.Done():
-		log.Info().Str("url", url).Msg("Single URL crawling cancelled by context")
-		return ctx.Err()
-	case err := <-errorsChan:
-		if err != nil {
-			return err
-		}
-		// If no error was sent, task completed successfully
+	defer func() {
 		// Print final statistics
 		stats := workerPool.Stats()
 		log.Info().
@@ -593,11 +611,9 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url strin
 			Int64("activeWorkers", stats.ActiveWorkers).
 			Str("url", url).
 			Msg("Single URL crawling session completed")
-		return nil
-	case <-time.After(200 * time.Second): // Slightly longer than task timeout
-		log.Error().Str("url", url).Msg("Single URL crawling timed out")
-		return fmt.Errorf("single URL crawling timed out")
-	}
+	}()
+
+	return nil
 }
 
 func (c *SingaporeSupremeCourtCrawler) ExtractElements(ctx context.Context, element *rod.Element) (repository.UrlFrontier, error) {
@@ -721,9 +737,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 
 		crawlerResult, err := c.ExtractElements(ctx, element)
 		if err != nil {
-			// Since ExtractElements returns ErrNotImplemented, we continue for now
-			// In a real implementation, this should properly extract elements
-			log.Debug().Err(err).Msg("Element extraction not yet implemented")
+			log.Error().Err(err).Msg("Error extracting elements")
 			continue
 		}
 
@@ -748,25 +762,19 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 
 // Consume processes a message from a queue
 func (c *SingaporeSupremeCourtCrawler) Consume(ctx context.Context, message []byte) error {
-	log.Info().Msg("Processing Singapore Supreme Court crawler message from queue")
-
-	// In a real implementation, this would:
-	// 1. Unmarshal the message (likely a URL frontier or instruction)
-	// 2. Process it according to the crawler's logic
-	// 3. Create URL frontiers or perform other actions
 	var msg messaging.CrawlRequest
 	if err := json.Unmarshal(message, &msg); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal message")
+		log.Error().Err(err).Msg("Failed to unmarshal crawl request")
 		return err
 	}
 
 	switch msg.Type {
 	case constants.CrawlAllAction:
-		return c.CrawlAll(ctx)
+		return c.CrawlAll(ctx, msg.ID)
 	case constants.CrawlByKeywordAction:
-		return c.CrawlByKeyword(ctx, msg.Payload)
+		return c.CrawlByKeyword(ctx, msg.Payload.Keyword, msg.ID)
 	case constants.CrawlByURLAction:
-		return c.CrawlByURL(ctx, msg.Payload)
+		return c.CrawlByURL(ctx, msg.Payload.URL, msg.ID)
 	default:
 		log.Warn().Str("type", string(msg.Type)).Msg("Unknown crawl request type")
 		return fmt.Errorf("unknown crawl request type: %s", msg.Type)

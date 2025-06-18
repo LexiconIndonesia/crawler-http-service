@@ -14,6 +14,7 @@ type CrawlerLog struct {
 	ID            string
 	DataSourceID  string
 	UrlFrontierID pgtype.Text
+	JobsID        pgtype.Text
 	EventType     string
 	Message       pgtype.Text
 	// Stores structured log data including context, parameters, and results
@@ -32,6 +33,7 @@ type DataSource struct {
 	IsActive    bool
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	DeletedAt   pgtype.Timestamptz
 }
 
 type Extraction struct {
@@ -62,6 +64,15 @@ type ExtractionVersion struct {
 	PageHash  pgtype.Text
 	Version   int32
 	CreatedAt time.Time
+}
+
+type Job struct {
+	ID         string
+	Status     string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	StartedAt  pgtype.Timestamptz
+	FinishedAt pgtype.Timestamptz
 }
 
 type UrlFrontier struct {

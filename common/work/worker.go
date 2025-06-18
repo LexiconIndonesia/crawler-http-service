@@ -48,6 +48,7 @@ type PoolConfig struct {
 	ResultChanSize  int           // Buffer size for result channel
 	TaskTimeout     time.Duration // Default timeout for tasks
 	ShutdownTimeout time.Duration // Timeout for graceful shutdown
+	WorkManager     *WorkManager  // Optional: for tracking work state in Redis
 }
 
 // DefaultPoolConfig returns a sensible default configuration
@@ -63,13 +64,14 @@ func DefaultPoolConfig() PoolConfig {
 
 // Pool is an enhanced worker pool implementation with generics
 type Pool[T any] struct {
-	config   PoolConfig
-	tasks    chan Executor[T]
-	results  chan TaskResult[T]
-	quit     chan struct{}
-	wg       sync.WaitGroup
-	once     sync.Once
-	stopOnce sync.Once
+	config      PoolConfig
+	tasks       chan Executor[T]
+	results     chan TaskResult[T]
+	quit        chan struct{}
+	wg          sync.WaitGroup
+	once        sync.Once
+	stopOnce    sync.Once
+	workManager *WorkManager
 
 	// Metrics
 	activeWorkers  int64
@@ -117,10 +119,11 @@ func NewWorkerPoolWithConfig[T any](config PoolConfig) (*Pool[T], error) {
 	}
 
 	return &Pool[T]{
-		config:  config,
-		tasks:   make(chan Executor[T], config.TaskChannelSize),
-		results: make(chan TaskResult[T], config.ResultChanSize),
-		quit:    make(chan struct{}),
+		config:      config,
+		tasks:       make(chan Executor[T], config.TaskChannelSize),
+		results:     make(chan TaskResult[T], config.ResultChanSize),
+		quit:        make(chan struct{}),
+		workManager: config.WorkManager,
 	}, nil
 }
 
@@ -313,6 +316,22 @@ func (p *Pool[T]) startWorkers(ctx context.Context, poolID string) {
 // executeTask executes a single task with proper error handling and timeout
 func (p *Pool[T]) executeTask(ctx context.Context, task Executor[T], workerID int, poolID string) {
 	taskID := task.ExecutorID()
+
+	if p.workManager != nil {
+		err := p.workManager.Start(ctx, taskID)
+		if err != nil {
+			log.Warn().
+				Str("workerPoolID", poolID).
+				Int("workerID", workerID).
+				Str("taskID", taskID).
+				Err(err).
+				Msg("Skipping task, work is already running or failed to start in WorkManager")
+			return
+		}
+		// Use a separate context for cleanup in case the task context is cancelled.
+		defer p.workManager.Complete(context.Background(), taskID)
+	}
+
 	startTime := time.Now()
 
 	// Determine timeout for this task

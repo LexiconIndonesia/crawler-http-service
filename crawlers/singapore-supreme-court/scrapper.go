@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/LexiconIndonesia/crawler-http-service/common"
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
@@ -27,8 +26,9 @@ import (
 
 type SingaporeSupremeCourtScraper struct {
 	crawler.BaseScraper
-	Config  crawler.SingaporeSupremeCourtConfig
-	browser *rod.Browser
+	Config      crawler.SingaporeSupremeCourtConfig
+	browser     *rod.Browser
+	workManager *work.WorkManager
 }
 
 // NewSingaporeSupremeCourtScraper creates a new SingaporeSupremeCourtScraper
@@ -43,7 +43,8 @@ func NewSingaporeSupremeCourtScraper(db *db.DB, config crawler.SingaporeSupremeC
 			DataSourceRepo:  services.NewDataSourceRepository(db.Queries),
 			StorageService:  storage.StorageClient,
 		},
-		Config: config,
+		Config:      config,
+		workManager: work.NewWorkManager(db),
 	}, nil
 }
 
@@ -76,6 +77,7 @@ type scrapeTask struct {
 	scraper  *SingaporeSupremeCourtScraper
 	pagePool *rod.Pool[rod.Page]
 	frontier repository.UrlFrontier
+	jobID    string
 }
 
 func (t *scrapeTask) ExecutorID() string {
@@ -94,7 +96,7 @@ func (t *scrapeTask) Execute(ctx context.Context) (repository.Extraction, error)
 		time.Sleep(time.Duration(delay) * time.Millisecond)
 	}
 
-	extraction, err := t.scraper.scrapeJob(t.pagePool, ctx, t.frontier)
+	extraction, err := t.scraper.scrapeJob(t.pagePool, ctx, t.frontier, t.jobID)
 	if err != nil {
 		// Mark as failed
 		_ = t.scraper.UpdateUrlFrontierStatus(ctx, []string{t.frontier.ID}, models.UrlFrontierStatusFailed, err.Error())
@@ -115,8 +117,8 @@ func (t *scrapeTask) OnError(err error) {
 func (t *scrapeTask) Timeout() time.Duration { return 0 }
 
 // ScrapeAll scrapes all pending URLs for Singapore Supreme Court
-func (s *SingaporeSupremeCourtScraper) ScrapeAll(ctx context.Context) error {
-	log.Info().Msg("Starting ScrapeAll for Singapore Supreme Court")
+func (s *SingaporeSupremeCourtScraper) ScrapeAll(ctx context.Context, jobID string) error {
+	log.Info().Str("jobID", jobID).Msg("Starting ScrapeAll for Singapore Supreme Court")
 
 	// Derive cancellable context so we can propagate cancellations to the pool
 	ctx, cancel := context.WithCancel(ctx)
@@ -141,12 +143,17 @@ func (s *SingaporeSupremeCourtScraper) ScrapeAll(ctx context.Context) error {
 		numWorkers = 10
 	}
 
-	workerPool, err := work.NewWorkerPool[repository.Extraction](numWorkers, numWorkers*2)
+	poolConfig := work.PoolConfig{
+		NumWorkers:      numWorkers,
+		TaskChannelSize: numWorkers * 2,
+		WorkManager:     s.workManager,
+	}
+	workerPool, err := work.NewWorkerPoolWithConfig[repository.Extraction](poolConfig)
 	if err != nil {
 		return err
 	}
 
-	workerPool.Start(ctx, "ssc-scraper")
+	workerPool.Start(ctx, jobID)
 
 	// Track global stats safely via atomics
 	var totalSuccessCount int64
@@ -200,6 +207,7 @@ func (s *SingaporeSupremeCourtScraper) ScrapeAll(ctx context.Context) error {
 				scraper:  s,
 				pagePool: &pagePool,
 				frontier: frontier,
+				jobID:    jobID,
 			}
 
 			if err := workerPool.AddTask(ctx, task); err != nil {
@@ -226,8 +234,8 @@ func (s *SingaporeSupremeCourtScraper) ScrapeAll(ctx context.Context) error {
 }
 
 // ScrapeByURLFrontierID scrapes a specific URL frontier by ID
-func (s *SingaporeSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context, id string) error {
-	log.Info().Str("id", id).Msg("Starting ScrapeByURLFrontierID for Singapore Supreme Court")
+func (s *SingaporeSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context, id string, jobID string) error {
+	log.Info().Str("id", id).Str("jobID", jobID).Msg("Starting ScrapeByURLFrontierID for Singapore Supreme Court")
 
 	// 1. Fetch the URL frontier
 	frontier, err := s.UrlFrontierRepo.GetByID(ctx, id)
@@ -252,7 +260,7 @@ func (s *SingaporeSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context
 	defer page.Close()
 
 	// 4. Scrape the page
-	extraction, err := s.ScrapePage(ctx, page, frontier)
+	extraction, err := s.ScrapePage(ctx, page, frontier, jobID)
 	if err != nil {
 		log.Error().Err(err).Str("id", id).Msg("Failed to scrape page")
 		_ = s.UpdateUrlFrontierStatus(ctx, []string{frontier.ID}, models.UrlFrontierStatusFailed, err.Error())
@@ -290,33 +298,33 @@ func (s *SingaporeSupremeCourtScraper) Consume(ctx context.Context, message []by
 
 	switch req.Type {
 	case "scrape_all":
-		log.Info().Msg("Received request to scrape all")
-		return s.ScrapeAll(ctx)
+		log.Info().Str("jobID", req.ID).Msg("Received request to scrape all")
+		return s.ScrapeAll(ctx, req.ID)
 	case "scrape_by_id":
-		if req.UrlFrontierID == "" {
+		if req.Payload.URLFrontierID == "" {
 			err := fmt.Errorf("UrlFrontierID cannot be empty for type 'scrape_by_id'")
 			log.Error().Err(err).Msg("Invalid scrape request")
 			return err
 		}
-		log.Info().Str("id", req.UrlFrontierID).Msg("Received URL frontier to scrape")
+		log.Info().Str("id", req.Payload.URLFrontierID).Str("jobID", req.ID).Msg("Received URL frontier to scrape")
 
 		// You can either call ScrapeByURLFrontierID or a more direct scraping method
 		// if you have the full frontier object.
 		// ScrapeByURLFrontierID fetches it again, which might be redundant but safer.
-		return s.ScrapeByURLFrontierID(ctx, req.UrlFrontierID)
+		return s.ScrapeByURLFrontierID(ctx, req.Payload.URLFrontierID, req.ID)
 	default:
 		log.Error().Str("type", string(req.Type)).Msg("Invalid action type for scraper")
 		return fmt.Errorf("invalid action type for scraper: %s", req.Type)
 	}
 }
 
-func (s *SingaporeSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod.Page, urlFrontier repository.UrlFrontier) (repository.Extraction, error) {
+func (s *SingaporeSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod.Page, urlFrontier repository.UrlFrontier, jobID string) (repository.Extraction, error) {
 	select {
 	case <-ctx.Done():
 		return repository.Extraction{}, ctx.Err()
 	default:
 	}
-	log.Info().Msgf("Scraping url: %s", urlFrontier.Url)
+	log.Info().Str("jobID", jobID).Str("url", urlFrontier.Url).Msg("Scraping url")
 
 	rpCtx := page.Context(ctx)
 	wait := rpCtx.MustWaitNavigation()
@@ -412,23 +420,9 @@ func (s *SingaporeSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod
 
 	extraction.ArtifactLink = pgtype.Text{String: pdfArtifact.URL, Valid: true}
 	extraction.RawPageLink = pgtype.Text{String: htmlArtifact.URL, Valid: true}
-	log.Info().Msgf("Scraped template for url: %s", urlFrontier.Url)
+	log.Info().Str("jobID", jobID).Str("url", urlFrontier.Url).Msg("Scraped template for url")
 
 	return extraction, nil
-}
-
-// ExtractElements extracts data from a page
-func (s *SingaporeSupremeCourtScraper) ExtractElements(ctx context.Context, page *rod.Page) ([]repository.Extraction, error) {
-	// Not implemented as per requirements
-	log.Error().Msg("ExtractElements method not implemented")
-	return nil, common.ErrNotImplemented
-}
-
-// ExtractArtifactsFromPage extracts and downloads artifacts from a page
-func (s *SingaporeSupremeCourtScraper) ExtractArtifactsFromPage(ctx context.Context, page *rod.Page) ([]models.ExtractionArtifact, error) {
-	// Not implemented as per requirements
-	log.Error().Msg("ExtractArtifactsFromPage method not implemented")
-	return nil, common.ErrNotImplemented
 }
 
 func (s *SingaporeSupremeCourtScraper) createPage() (*rod.Page, error) {
@@ -441,14 +435,14 @@ func (s *SingaporeSupremeCourtScraper) createPage() (*rod.Page, error) {
 	return incognito.MustPage(), nil
 }
 
-func (s *SingaporeSupremeCourtScraper) scrapeJob(pagePool *rod.Pool[rod.Page], ctx context.Context, urlFrontier repository.UrlFrontier) (repository.Extraction, error) {
+func (s *SingaporeSupremeCourtScraper) scrapeJob(pagePool *rod.Pool[rod.Page], ctx context.Context, urlFrontier repository.UrlFrontier, jobID string) (repository.Extraction, error) {
 	page, err := pagePool.Get(s.createPage)
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting page")
 		return repository.Extraction{}, err
 	}
 	defer pagePool.Put(page)
-	extraction, err := s.ScrapePage(ctx, page, urlFrontier)
+	extraction, err := s.ScrapePage(ctx, page, urlFrontier, jobID)
 	if err != nil {
 		log.Error().Err(err).Msg("Error scraping url frontier")
 		return repository.Extraction{}, err

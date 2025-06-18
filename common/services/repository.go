@@ -72,4 +72,16 @@ type DataSourceService interface {
 
 	// Get Datasource by name
 	GetByName(ctx context.Context, name string) (repository.DataSource, error)
+
+	// Create creates a new data source
+	Create(ctx context.Context, arg repository.CreateDataSourceParams) (repository.DataSource, error)
+
+	// Update updates a data source
+	Update(ctx context.Context, arg repository.UpdateDataSourceParams) (repository.DataSource, error)
+
+	// Delete deletes a data source
+	Delete(ctx context.Context, id string) error
+
+	// GetAll gets all data sources
+	GetAll(ctx context.Context) ([]repository.DataSource, error)
 }

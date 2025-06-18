@@ -6,9 +6,11 @@ import (
 	"maps"
 	"sync"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common/constants"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
+	"github.com/nats-io/nats.go"
 )
 
 var (
@@ -83,20 +85,22 @@ func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 
 	// get all datasources
 	dataSources, err := dbConn.Queries.GetActiveDataSources(ctx)
-
-	datasourceMap := make(map[string]repository.DataSource)
-
 	if err != nil {
 		return fmt.Errorf("failed to get active data sources: %w", err)
 	}
 
+	datasourceMap := make(map[string]repository.DataSource)
 	for _, ds := range dataSources {
 		datasourceMap[ds.Name] = ds
 	}
-	// Register all crawlers to listen to NATS messages
+
+	// Register all scrapers to listen to NATS messages
 	for name, creator := range GetScraperRegistry() {
 
-		dataSource := datasourceMap[name]
+		dataSource, ok := datasourceMap[name]
+		if !ok {
+			continue // or log a warning
+		}
 
 		baseScraperConfig := DefaultBaseScraperConfig()
 		baseScraperConfig.DataSource = dataSource
@@ -107,11 +111,29 @@ func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 			return fmt.Errorf("failed to create scraper: %w", err)
 		}
 
-		scraper.Setup(ctx)
+		if err := scraper.Setup(ctx); err != nil {
+			return fmt.Errorf("failed to setup scraper %s: %w", name, err)
+		}
+
+		// Subscribe to scrape topics
+		scrapeAllTopic := fmt.Sprintf("%s.%s", dataSource.ID, constants.ScrapeAllAction)
+		_, err = messaging.SubscribeToQueueGroup(natsClient, scrapeAllTopic, "scraper-workers", func(msg *nats.Msg) error {
+			return scraper.Consume(ctx, msg.Data)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to subscribe to topic %s: %w", scrapeAllTopic, err)
+		}
+
+		scrapeByIDTopic := fmt.Sprintf("%s.%s", dataSource.ID, constants.ScrapeByIDAction)
+		_, err = messaging.SubscribeToQueueGroup(natsClient, scrapeByIDTopic, "scraper-workers", func(msg *nats.Msg) error {
+			return scraper.Consume(ctx, msg.Data)
+		})
+		if err != nil {
+			return fmt.Errorf("failed to subscribe to topic %s: %w", scrapeByIDTopic, err)
+		}
 	}
 
 	return nil
-
 }
 
 // GetScraperRegistry returns the scraper registry

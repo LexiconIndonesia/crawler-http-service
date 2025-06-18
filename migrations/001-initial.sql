@@ -106,6 +106,7 @@ CREATE TABLE "crawler_logs" (
   "id" varchar(64) NOT NULL PRIMARY KEY,
   "data_source_id" varchar(64) NOT NULL,
   "url_frontier_id" varchar(64) NULL,
+  "jobs_id" varchar(64) NULL,
   "event_type" varchar(100) NOT NULL, -- start, end, error, warning, etc.
   "message" text NULL,
   "details" jsonb NULL, -- For storing structured log data and context
@@ -123,5 +124,8 @@ CREATE INDEX idx_logs_url_frontier ON crawler_logs (url_frontier_id);
 
 -- Create index for event_type
 CREATE INDEX idx_logs_event_type ON crawler_logs (event_type);
+
+-- Create index for jobs_id
+CREATE INDEX idx_logs_jobs_id ON crawler_logs (jobs_id);
 
 

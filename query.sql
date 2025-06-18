@@ -88,16 +88,37 @@ LIMIT 1;
 
 -- Get data source by ID
 -- name: GetDataSourceById :one
-SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at
+SELECT *
 FROM data_sources
 WHERE id = $1
 LIMIT 1;
 
 -- Get all active data sources
 -- name: GetActiveDataSources :many
-SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at
+SELECT *
 FROM data_sources
-WHERE is_active = true;
+WHERE is_active = true AND deleted_at IS NULL;
+
+-- Create a new data source
+-- name: CreateDataSource :one
+INSERT INTO data_sources (id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+RETURNING *;
+
+-- Update an existing data source
+-- name: UpdateDataSource :one
+UPDATE data_sources
+SET
+  name = $2,
+  country = $3,
+  source_type = $4,
+  base_url = $5,
+  description = $6,
+  config = $7,
+  is_active = $8,
+  updated_at = $9
+WHERE id = $1
+RETURNING *;
 
 -- Upsert data source
 -- name: UpsertDataSource :exec
@@ -116,10 +137,42 @@ SET
 
 -- Get data source by name
 -- name: GetDataSourceByName :one
-SELECT id, name, country, source_type, base_url, description, config, is_active, created_at, updated_at
+SELECT *
 FROM data_sources
-WHERE name = $1
+WHERE name = $1 AND deleted_at IS NULL
 LIMIT 1;
+
+-- name: ListDataSources :many
+SELECT *
+FROM data_sources
+WHERE
+    (sqlc.narg('data_source')::TEXT IS NULL OR name = sqlc.narg('data_source'))
+AND
+    (sqlc.narg('search')::TEXT IS NULL OR name ILIKE '%' || sqlc.narg('search') || '%')
+AND deleted_at IS NULL
+ORDER BY
+    name ASC
+LIMIT sqlc.arg('limit')
+OFFSET sqlc.arg('offset');
+
+-- name: CountDataSources :one
+SELECT count(*)
+FROM data_sources
+WHERE
+    (sqlc.narg('data_source')::TEXT IS NULL OR name = sqlc.narg('data_source'))
+AND
+    (sqlc.narg('search')::TEXT IS NULL OR name ILIKE '%' || sqlc.narg('search') || '%')
+AND deleted_at IS NULL;
+
+-- Soft delete a data source by ID
+-- name: DeleteDataSource :exec
+UPDATE data_sources
+SET deleted_at = NOW()
+WHERE id = $1;
+
+-- Get all data sources, including deleted ones
+-- name: GetAllDataSources :many
+SELECT * FROM data_sources;
 
 -- =============================================
 -- Extractions Table Operations
@@ -179,6 +232,33 @@ INSERT INTO extraction_versions (
 -- =============================================
 
 -- Create a new crawler log entry
--- name: CreateCrawlerLog :exec
-INSERT INTO crawler_logs (id, data_source_id, url_frontier_id, event_type, message, details, created_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7);
+-- name: CreateCrawlerLog :one
+INSERT INTO crawler_logs (id, data_source_id, url_frontier_id,  event_type, message, details, created_at, jobs_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING *;
+
+-- Get crawler logs by job ID
+-- name: GetCrawlerLogsByJobId :many
+SELECT * FROM crawler_logs WHERE jobs_id = $1 ORDER BY created_at DESC;
+
+-- =============================================
+-- Jobs Table Operations
+-- =============================================
+
+-- Create a new job (queued)
+-- name: CreateJob :one
+INSERT INTO jobs (
+    id,
+    status
+) VALUES (
+    $1, $2
+) RETURNING id, status, created_at, updated_at, started_at, finished_at;
+
+-- Update job status and updated_at timestamp
+-- name: UpdateJobStatus :one
+UPDATE jobs
+SET
+    status = $2,
+    updated_at = NOW()
+WHERE id = $1
+RETURNING id, status, created_at, updated_at, started_at, finished_at;

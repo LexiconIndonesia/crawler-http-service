@@ -9,7 +9,8 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/config"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
-	"github.com/LexiconIndonesia/crawler-http-service/module"
+	"github.com/LexiconIndonesia/crawler-http-service/handler"
+	"github.com/LexiconIndonesia/crawler-http-service/middlewares"
 
 	_ "github.com/LexiconIndonesia/crawler-http-service/docs"
 	"github.com/go-chi/chi/v5"
@@ -83,24 +84,26 @@ func (s *AppHttpServer) setupRoute() {
 		log.Warn().Msg("NATS client dependency not set")
 	}
 
-	// Create the module with dependency injection
-	mod := module.NewModule(s.db, s.natsClient)
-
 	// API Documentation with Swagger
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"), // The URL pointing to API definition
 	))
 
 	r.Route("/v1", func(r chi.Router) {
-		// r.Use(middlewares.AccessTime())
-		// r.Use(middlewares.ApiKey(cfg.BackendApiKey, cfg.ServerSalt))
-		// r.Use(middlewares.RequestSignature(cfg.ServerSalt))
+		r.Use(middlewares.AccessTime())
+		r.Use(middlewares.ApiKey(s.cfg.Security.BackendApiKey, s.cfg.Security.ServerSalt))
+		r.Use(middlewares.RequestSignature(s.cfg.Security.ServerSalt))
 
-		// Use new module structure with DI
-		r.Mount("/module", mod.Router())
+		// Handlers
+		crawlerHandler := handler.NewCrawlerHandler(s.db, s.natsClient, s.cfg)
+		scraperHandler := handler.NewScraperHandler(s.db, s.natsClient, s.cfg)
+		dataSourceHandler := handler.NewDataSourceHandler(s.db)
+		workManagerHandler := handler.NewWorkManagerHandler(s.db, s.cfg)
 
-		// Legacy module access (will be deprecated)
-		r.Mount("/legacy-module", mod.SetupBaseRoutes())
+		r.Mount("/crawlers", crawlerHandler.Router())
+		r.Mount("/scrapers", scraperHandler.Router())
+		r.Mount("/datasources", dataSourceHandler.Router())
+		r.Mount("/works", workManagerHandler.Router())
 	})
 }
 

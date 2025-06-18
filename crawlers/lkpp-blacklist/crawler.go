@@ -10,6 +10,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/common/services"
 	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
+	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
 	"github.com/rs/zerolog/log"
@@ -37,7 +38,8 @@ func (c LKPPBlacklistConfig) Validate() error {
 // LKPPBlacklistCrawler is a crawler for the LKPP blacklist
 type LKPPBlacklistCrawler struct {
 	crawler.BaseCrawler
-	Config LKPPBlacklistConfig
+	Config      LKPPBlacklistConfig
+	workManager *work.WorkManager
 }
 
 // NewLKPPBlacklistCrawler creates a new LKPPBlacklistCrawler
@@ -53,7 +55,8 @@ func NewLKPPBlacklistCrawler(db *db.DB, config LKPPBlacklistConfig, baseConfig c
 			DataSourceRepo:  services.NewDataSourceRepository(db.Queries),
 			StorageService:  storage.StorageClient,
 		},
-		Config: config,
+		Config:      config,
+		workManager: work.NewWorkManager(db),
 	}, nil
 }
 
@@ -72,7 +75,7 @@ func (c *LKPPBlacklistCrawler) Teardown(ctx context.Context) error {
 }
 
 // CrawlAll crawls all blacklisted companies
-func (c *LKPPBlacklistCrawler) CrawlAll(ctx context.Context) error {
+func (c *LKPPBlacklistCrawler) CrawlAll(ctx context.Context, jobID string) error {
 	log.Info().Msg("Crawling all LKPP blacklisted companies")
 	// This would:
 	// 1. Navigate to the blacklist page
@@ -84,7 +87,7 @@ func (c *LKPPBlacklistCrawler) CrawlAll(ctx context.Context) error {
 }
 
 // CrawlByKeyword crawls blacklisted companies by keyword
-func (c *LKPPBlacklistCrawler) CrawlByKeyword(ctx context.Context, keyword string) error {
+func (c *LKPPBlacklistCrawler) CrawlByKeyword(ctx context.Context, keyword string, jobID string) error {
 	log.Info().Str("keyword", keyword).Msg("Crawling LKPP blacklisted companies by keyword")
 
 	// Build search parameters
@@ -108,7 +111,7 @@ func (c *LKPPBlacklistCrawler) CrawlByKeyword(ctx context.Context, keyword strin
 }
 
 // CrawlByURL crawls a specific blacklisted company
-func (c *LKPPBlacklistCrawler) CrawlByURL(ctx context.Context, url string) error {
+func (c *LKPPBlacklistCrawler) CrawlByURL(ctx context.Context, url string, jobID string) error {
 	log.Info().Str("url", url).Msg("Crawling specific LKPP blacklisted company")
 
 	// In a real implementation, this would:
