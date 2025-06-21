@@ -41,6 +41,7 @@ func NewIndonesiaSupremeCourtCrawler(db *db.DB, config crawler.IndonesiaSupremeC
 }
 
 func (c *IndonesiaSupremeCourtCrawler) Setup(ctx context.Context) error {
+
 	log.Info().Msg("Setting up Indonesia Supreme Court crawler")
 	// In a real implementation, this would initialize any necessary resources
 

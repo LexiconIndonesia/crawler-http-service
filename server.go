@@ -12,7 +12,6 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/handler"
 	"github.com/LexiconIndonesia/crawler-http-service/middlewares"
 
-	_ "github.com/LexiconIndonesia/crawler-http-service/docs"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -89,6 +88,13 @@ func (s *AppHttpServer) setupRoute() {
 		httpSwagger.URL("/swagger/doc.json"), // The URL pointing to API definition
 	))
 
+	// Public health endpoint (no authentication required)
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"healthy","service":"crawler-http-service"}`))
+	})
+
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(middlewares.AccessTime())
 		r.Use(middlewares.ApiKey(s.cfg.Security.BackendApiKey, s.cfg.Security.ServerSalt))
@@ -99,11 +105,13 @@ func (s *AppHttpServer) setupRoute() {
 		scraperHandler := handler.NewScraperHandler(s.db, s.natsClient, s.cfg)
 		dataSourceHandler := handler.NewDataSourceHandler(s.db)
 		workManagerHandler := handler.NewWorkManagerHandler(s.db, s.cfg)
+		healthHandler := handler.NewHealthHandler(s.db)
 
 		r.Mount("/crawlers", crawlerHandler.Router())
 		r.Mount("/scrapers", scraperHandler.Router())
 		r.Mount("/datasources", dataSourceHandler.Router())
 		r.Mount("/works", workManagerHandler.Router())
+		r.Mount("/health", healthHandler.Router())
 	})
 }
 

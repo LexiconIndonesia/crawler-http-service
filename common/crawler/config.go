@@ -36,6 +36,8 @@ type IndonesiaSupremeCourtConfig struct {
 	SortMethods    []string                `json:"sort_methods"`
 	SortOptions    []string                `json:"sort_options"`
 	ListQueryParam IndonesiaListQueryParam `json:"list_query_params"`
+	MinDelayMs     int                     `json:"min_delay_ms"`
+	MaxDelayMs     int                     `json:"max_delay_ms"`
 }
 
 func (c IndonesiaSupremeCourtConfig) Validate() error {

@@ -52,6 +52,7 @@ func NewSingaporeSupremeCourtCrawler(db *db.DB, config crawler.SingaporeSupremeC
 
 // Setup initializes the crawler
 func (c *SingaporeSupremeCourtCrawler) Setup(ctx context.Context) error {
+
 	log.Info().Msgf("Setting Up Singapore Supreme Court crawler")
 	browser := rod.New()
 
@@ -276,6 +277,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 		log.Error().Err(err).Str("jobID", jobID).Msg("Failed to start work in manager")
 		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
 	}
+	l.Msg("Work manager started for job")
 
 	// Validate keyword
 	if keyword == "" {
@@ -283,6 +285,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 	}
 
 	// Create URL crawler with keyword search
+	l.Msg("Creating URL crawler")
 	startUrl, err := newStartURLCrawler(c.BaseCrawler.Config, c.Config)
 	if err != nil {
 		log.Err(err).Msg("Error creating URL crawler")
@@ -292,6 +295,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 	// Set the search phrase to the keyword
 	startUrl.searchPhrase = keyword
 
+	l.Msg("Creating page pool")
 	pagePool := rod.NewPagePool(c.BaseCrawler.Config.MaxConcurrency)
 	defer pagePool.Cleanup(func(p *rod.Page) {
 		err := p.Close()
@@ -300,8 +304,10 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 		}
 	})
 
+	l.Msg("Creating new page for getting last page number")
 	rpLast := c.browser.MustPage()
 	defer rpLast.Close()
+	l.Msg("Getting last page number")
 	lastPage, err := getLastPage(ctx, rpLast, startUrl.constructURL())
 	if err != nil {
 		return fmt.Errorf("failed to get last page for keyword search: %w", err)
@@ -768,6 +774,8 @@ func (c *SingaporeSupremeCourtCrawler) Consume(ctx context.Context, message []by
 		return err
 	}
 
+	log.Info().Msgf("Consuming message: %+v", msg)
+
 	switch msg.Type {
 	case constants.CrawlAllAction:
 		return c.CrawlAll(ctx, msg.ID)
@@ -805,6 +813,7 @@ func (c *SingaporeSupremeCourtCrawler) crawlingJob(pagePool *rod.Pool[rod.Page],
 func getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, int], error) {
 	lastPage := 0
 
+	log.Info().Str("url", url).Msg("Getting last page")
 	if err := rp.Context(ctx).Navigate(url); err != nil {
 		if err == context.Canceled {
 			return lo.Tuple2[int, int]{}, err
@@ -812,23 +821,26 @@ func getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, 
 		log.Error().Err(err).Msg("Error navigating to url")
 		return lo.Tuple2[int, int]{}, err
 	}
+	log.Info().Msg("Navigation completed")
 	totalResult := 0
 	totalResultElement, err := rp.Element("#listview > div.row.justify-content-between.align-items-center > div.gd-csummary")
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting total result element")
 		return lo.Tuple2[int, int]{}, err
 	}
+	log.Info().Msg("Found total result element")
 	res, err := totalResultElement.HTML()
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting total result element")
 		return lo.Tuple2[int, int]{}, err
 	}
-	totalResult, err = strconv.Atoi(regexp.MustCompile(`\d+`).FindString(res))
+	totalResult, err = strconv.Atoi(regexp.MustCompile(`\\d+`).FindString(res))
 	if err != nil {
 		log.Error().Err(err).Msg("Error converting total result to integer")
 		return lo.Tuple2[int, int]{}, err
 	}
 
+	log.Info().Msg("Searching for page number elements")
 	elements, err := rp.Elements("#listview > div.row.justify-content-end > div > ul > li.page-item.page-link> a")
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting elements")
@@ -857,6 +869,7 @@ func getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, 
 			lastPage = lpInt
 		}
 	}
+	log.Info().Int("lastPage", lastPage).Msg("Finished getting last page")
 
 	return lo.Tuple2[int, int]{
 		A: lastPage,

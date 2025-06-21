@@ -3,8 +3,6 @@ package messaging
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/config"
 	"github.com/nats-io/nats.go"
@@ -14,19 +12,16 @@ import (
 
 // NatsBroker implements the MessageBroker interface for NATS
 type NatsBroker struct {
-	conn        *nats.Conn
-	js          jetstream.JetStream
-	config      config.Config
-	subscribers map[string]*nats.Subscription
-	mu          sync.Mutex
+	conn   *nats.Conn
+	js     jetstream.JetStream
+	config config.Config
 }
 
 // NewNatsBroker creates a new NATS message broker
 func NewNatsBroker(cfg config.Config) (*NatsBroker, error) {
 
 	client := &NatsBroker{
-		config:      cfg,
-		subscribers: make(map[string]*nats.Subscription),
+		config: cfg,
 	}
 
 	// Connect to NATS
@@ -65,7 +60,7 @@ func (c *NatsBroker) connect() error {
 	}
 
 	// Connect to NATS
-	c.conn, err = nats.Connect(c.config.Nats.URL, opts...)
+	c.conn, err = nats.Connect(c.config.Nats.URL(), opts...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to NATS: %w", err)
 	}
@@ -83,9 +78,6 @@ func (c *NatsBroker) connect() error {
 
 // Close closes the NATS connection
 func (c *NatsBroker) Close() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	// Drain the connection (gracefully unsubscribe)
 	if c.conn != nil && c.conn.IsConnected() {
 		return c.conn.Drain()
@@ -93,103 +85,20 @@ func (c *NatsBroker) Close() error {
 	return nil
 }
 
-// Publish publishes a message to a subject
-func (c *NatsBroker) Publish(subject string, data []byte) error {
-	if c.conn == nil || !c.conn.IsConnected() {
-		return fmt.Errorf("not connected to NATS")
-	}
-
-	return c.conn.Publish(subject, data)
-}
-
-// PublishAsync publishes a message to a subject asynchronously
-func (c *NatsBroker) PublishAsync(subject string, data []byte) (jetstream.PubAckFuture, error) {
+// PublishSync publishes a message to a subject and waits for an acknowledgement
+func (c *NatsBroker) PublishSync(ctx context.Context, subject string, data []byte) error {
 	if c.js == nil {
-		return nil, fmt.Errorf("JetStream not initialized")
+		return fmt.Errorf("JetStream not initialized")
 	}
 
-	// Publish to JetStream with context
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	ack, err := c.js.PublishAsync(subject, data)
+	_, err := c.js.Publish(ctx, subject, data)
 	if err != nil {
-		return nil, fmt.Errorf("failed to publish message to %s: %w", subject, err)
+		return fmt.Errorf("failed to publish message to %s: %w", subject, err)
 	}
 
-	// Wait for ack in a goroutine
-	go func() {
-		select {
-		case pubAck := <-ack.Ok():
-			// Message was received by server
-			if pubAck != nil {
-				log.Debug().Str("subject", subject).
-					Str("stream", pubAck.Stream).
-					Uint64("seq", pubAck.Sequence).
-					Msg("Message acknowledged")
-			}
-		case err := <-ack.Err():
-			// There was an error with the message
-			if err != nil {
-				log.Error().Str("error", err.Error()).
-					Str("subject", subject).
-					Msg("Error publishing message")
-			}
-		case <-ctx.Done():
-			// Timeout waiting for ack
-			log.Warn().Str("subject", subject).
-				Msg("Timeout waiting for message acknowledgement")
-		}
-	}()
+	log.Info().Str("subject", subject).Msg("Published message to NATS and received ack")
 
-	return ack, nil
-}
-
-// Request sends a request and waits for a response
-func (c *NatsBroker) Request(subject string, data []byte, timeout time.Duration) (*nats.Msg, error) {
-	if c.conn == nil || !c.conn.IsConnected() {
-		return nil, fmt.Errorf("not connected to NATS")
-	}
-
-	return c.conn.Request(subject, data, timeout)
-}
-
-// Subscribe subscribes to a subject
-func (c *NatsBroker) Subscribe(subject string, handler nats.MsgHandler) (*nats.Subscription, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.conn == nil || !c.conn.IsConnected() {
-		return nil, fmt.Errorf("not connected to NATS")
-	}
-
-	sub, err := c.conn.Subscribe(subject, handler)
-	if err != nil {
-		return nil, fmt.Errorf("failed to subscribe to %s: %w", subject, err)
-	}
-
-	c.subscribers[subject] = sub
-	log.Info().Str("subject", subject).Msg("Subscribed to NATS subject")
-	return sub, nil
-}
-
-// QueueSubscribe subscribes to a subject with a queue group
-func (c *NatsBroker) QueueSubscribe(subject, queue string, handler nats.MsgHandler) (*nats.Subscription, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.conn == nil || !c.conn.IsConnected() {
-		return nil, fmt.Errorf("not connected to NATS")
-	}
-
-	sub, err := c.conn.QueueSubscribe(subject, queue, handler)
-	if err != nil {
-		return nil, fmt.Errorf("failed to queue subscribe to %s: %w", subject, err)
-	}
-
-	c.subscribers[subject+":"+queue] = sub
-	log.Info().Str("subject", subject).Str("queue", queue).Msg("Subscribed to NATS queue")
-	return sub, nil
+	return nil
 }
 
 // CreateStream creates a JetStream stream
@@ -198,8 +107,14 @@ func (c *NatsBroker) CreateStream(ctx context.Context, config jetstream.StreamCo
 		return nil, fmt.Errorf("JetStream not initialized")
 	}
 
+	log.Info().
+		Str("name", config.Name).
+		Strs("subjects", config.Subjects).
+		Msg("Attempting to create or update JetStream stream")
+
 	stream, err := c.js.CreateOrUpdateStream(ctx, config)
 	if err != nil {
+		log.Error().Err(err).Str("stream", config.Name).Msg("Failed to create or update stream")
 		return nil, fmt.Errorf("failed to create stream: %w", err)
 	}
 
@@ -273,16 +188,6 @@ func (c *NatsBroker) Consume(ctx context.Context, consumer jetstream.Consumer, h
 	return consumeCtx, nil
 }
 
-// GetJetStream returns the JetStream context
-func (c *NatsBroker) GetJetStream() jetstream.JetStream {
-	return c.js
-}
-
-// GetConn returns the NATS connection
-func (c *NatsBroker) GetConn() *nats.Conn {
-	return c.conn
-}
-
 // setupNatsBroker initializes the NATS client
 func SetupNatsBroker(cfg config.Config) (*NatsBroker, error) {
 
@@ -292,72 +197,4 @@ func SetupNatsBroker(cfg config.Config) (*NatsBroker, error) {
 	}
 
 	return client, nil
-}
-
-// setupGlobalSubscriptions sets up handlers for all NATS messages
-func SetupGlobalSubscriptions(natsClient *NatsBroker) error {
-	// Create a simple message handler function for all NATS messages
-	globalHandler := func(msg *nats.Msg) error {
-		log.Debug().
-			Str("subject", msg.Subject).
-			Str("data", string(msg.Data)).
-			Msg("Received global NATS message")
-		return nil
-	}
-
-	// Create a JetStream handler for persistent messages
-	jsHandler := func(msg jetstream.Msg) error {
-		log.Debug().
-			Str("subject", msg.Subject()).
-			Str("data", string(msg.Data())).
-			Msg("Received global JetStream message")
-		return nil
-	}
-
-	// Subscribe to all messages using the ">" wildcard
-	_, err := SubscribeToAll(natsClient, globalHandler)
-	if err != nil {
-		return fmt.Errorf("failed to create global subscription: %w", err)
-	}
-
-	// Subscribe to specific subjects that need special handling
-	_, err = SubscribeToSubject(natsClient, "notifications.*", func(msg *nats.Msg) error {
-		log.Info().
-			Str("subject", msg.Subject).
-			Str("data", string(msg.Data)).
-			Msg("Notification received")
-		return nil
-	})
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to create notifications subscription")
-	}
-
-	// Subscribe to JetStream messages
-	// This creates a stream and consumer for all messages (using ">")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// Create the ALL_MESSAGES stream if it doesn't exist
-	streamConfig := jetstream.StreamConfig{
-		Name:     "ALL_MESSAGES",
-		Subjects: []string{">"},
-		Storage:  jetstream.MemoryStorage,
-	}
-
-	// Try to create the JetStream stream
-	_, err = natsClient.CreateStream(ctx, streamConfig)
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to create ALL_MESSAGES stream, JetStream subscription not set up")
-	} else {
-		// Set up JetStream subscription
-		_, err = SubscribeToAllJetStream(natsClient, "ALL_MESSAGES", jsHandler)
-		if err != nil {
-			log.Warn().Err(err).Msg("Failed to create JetStream subscription")
-		} else {
-			log.Info().Msg("Global JetStream subscription handler set up successfully")
-		}
-	}
-
-	log.Info().Msg("Global NATS subscription handlers set up successfully")
-	return nil
 }

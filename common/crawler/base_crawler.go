@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"time"
@@ -112,34 +111,6 @@ func (c *BaseCrawler) SaveUrlFrontierBatch(ctx context.Context, frontiers []repo
 
 	log.Debug().Int("count", len(savedFrontiers)).Msg("Saved URL frontiers batch")
 	return savedFrontiers, nil
-}
-
-// PublishFrontier publishes a URL frontier to the message broker
-func (c *BaseCrawler) PublishFrontier(ctx context.Context, frontier repository.UrlFrontier, topic string) error {
-	if c.MessageBroker == nil {
-		return fmt.Errorf("message broker not initialized")
-	}
-
-	// Convert to message
-	msg, err := json.Marshal(frontier)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal frontier to JSON")
-		return err
-	}
-
-	// Use default topic if not specified
-	if topic == "" {
-		topic = "frontiers"
-	}
-
-	// Publish to message broker
-	if err := c.MessageBroker.Publish(topic, msg); err != nil {
-		log.Error().Err(err).Str("topic", topic).Msg("Failed to publish frontier to message broker")
-		return err
-	}
-
-	log.Debug().Str("id", frontier.ID).Str("url", frontier.Url).Str("topic", topic).Msg("Published frontier to message broker")
-	return nil
 }
 
 // UploadFileToStorage uploads a file to the storage service

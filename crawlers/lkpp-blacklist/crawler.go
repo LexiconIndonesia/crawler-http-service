@@ -62,6 +62,7 @@ func NewLKPPBlacklistCrawler(db *db.DB, config LKPPBlacklistConfig, baseConfig c
 
 // Setup initializes the crawler
 func (c *LKPPBlacklistCrawler) Setup(ctx context.Context) error {
+
 	log.Info().Msg("Setting up LKPP blacklist crawler")
 	// In a real implementation, this would initialize any necessary resources
 	return nil

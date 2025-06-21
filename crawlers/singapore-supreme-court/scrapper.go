@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common/constants"
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
@@ -50,6 +51,7 @@ func NewSingaporeSupremeCourtScraper(db *db.DB, config crawler.SingaporeSupremeC
 
 // Setup initializes the scraper
 func (s *SingaporeSupremeCourtScraper) Setup(ctx context.Context) error {
+
 	browser := rod.New()
 
 	err := browser.Connect()
@@ -297,12 +299,12 @@ func (s *SingaporeSupremeCourtScraper) Consume(ctx context.Context, message []by
 	}
 
 	switch req.Type {
-	case "scrape_all":
+	case constants.ScrapeAllAction:
 		log.Info().Str("jobID", req.ID).Msg("Received request to scrape all")
 		return s.ScrapeAll(ctx, req.ID)
-	case "scrape_by_id":
+	case constants.ScrapeByIDAction:
 		if req.Payload.URLFrontierID == "" {
-			err := fmt.Errorf("UrlFrontierID cannot be empty for type 'scrape_by_id'")
+			err := fmt.Errorf("UrlFrontierID cannot be empty for type '%s'", constants.ScrapeByIDAction)
 			log.Error().Err(err).Msg("Invalid scrape request")
 			return err
 		}

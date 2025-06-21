@@ -35,11 +35,12 @@ func (q *Queries) CountDataSources(ctx context.Context, arg CountDataSourcesPara
 }
 
 const countJobs = `-- name: CountJobs :one
-SELECT count(*) FROM jobs
+SELECT count(*)
+FROM jobs
 WHERE
-    ($1::text IS NULL OR status = $1)
+    ($1::TEXT IS NULL OR status = $1)
 AND
-    ($2::text IS NULL OR id::text ILIKE '%' || $2 || '%')
+    ($2::TEXT IS NULL OR id ILIKE '%' || $2 || '%')
 `
 
 type CountJobsParams struct {
@@ -47,6 +48,7 @@ type CountJobsParams struct {
 	Search pgtype.Text
 }
 
+// Count jobs with filtering
 func (q *Queries) CountJobs(ctx context.Context, arg CountJobsParams) (int64, error) {
 	row := q.db.QueryRow(ctx, countJobs, arg.Status, arg.Search)
 	var count int64
@@ -56,9 +58,9 @@ func (q *Queries) CountJobs(ctx context.Context, arg CountJobsParams) (int64, er
 
 const createCrawlerLog = `-- name: CreateCrawlerLog :one
 
-INSERT INTO crawler_logs (id, data_source_id, url_frontier_id,  event_type, message, details, created_at, jobs_id)
+INSERT INTO crawler_logs (id, data_source_id, url_frontier_id,  event_type, message, details, created_at, job_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, data_source_id, url_frontier_id, jobs_id, event_type, message, details, created_at
+RETURNING id, data_source_id, url_frontier_id, job_id, event_type, message, details, created_at
 `
 
 type CreateCrawlerLogParams struct {
@@ -69,7 +71,7 @@ type CreateCrawlerLogParams struct {
 	Message       pgtype.Text
 	Details       []byte
 	CreatedAt     time.Time
-	JobsID        pgtype.Text
+	JobID         pgtype.Text
 }
 
 // =============================================
@@ -85,14 +87,14 @@ func (q *Queries) CreateCrawlerLog(ctx context.Context, arg CreateCrawlerLogPara
 		arg.Message,
 		arg.Details,
 		arg.CreatedAt,
-		arg.JobsID,
+		arg.JobID,
 	)
 	var i CrawlerLog
 	err := row.Scan(
 		&i.ID,
 		&i.DataSourceID,
 		&i.UrlFrontierID,
-		&i.JobsID,
+		&i.JobID,
 		&i.EventType,
 		&i.Message,
 		&i.Details,
@@ -314,12 +316,12 @@ func (q *Queries) GetAllDataSources(ctx context.Context) ([]DataSource, error) {
 }
 
 const getCrawlerLogsByJobId = `-- name: GetCrawlerLogsByJobId :many
-SELECT id, data_source_id, url_frontier_id, jobs_id, event_type, message, details, created_at FROM crawler_logs WHERE jobs_id = $1 ORDER BY created_at DESC
+SELECT id, data_source_id, url_frontier_id, job_id, event_type, message, details, created_at FROM crawler_logs WHERE job_id = $1 ORDER BY created_at DESC
 `
 
 // Get crawler logs by job ID
-func (q *Queries) GetCrawlerLogsByJobId(ctx context.Context, jobsID pgtype.Text) ([]CrawlerLog, error) {
-	rows, err := q.db.Query(ctx, getCrawlerLogsByJobId, jobsID)
+func (q *Queries) GetCrawlerLogsByJobId(ctx context.Context, jobID pgtype.Text) ([]CrawlerLog, error) {
+	rows, err := q.db.Query(ctx, getCrawlerLogsByJobId, jobID)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +333,7 @@ func (q *Queries) GetCrawlerLogsByJobId(ctx context.Context, jobsID pgtype.Text)
 			&i.ID,
 			&i.DataSourceID,
 			&i.UrlFrontierID,
-			&i.JobsID,
+			&i.JobID,
 			&i.EventType,
 			&i.Message,
 			&i.Details,
@@ -481,10 +483,13 @@ func (q *Queries) GetExtractionsByUrlFrontierID(ctx context.Context, urlFrontier
 }
 
 const getJobByID = `-- name: GetJobByID :one
-SELECT id, status, created_at, updated_at, started_at, finished_at FROM jobs
+SELECT id, status, created_at, updated_at, started_at, finished_at
+FROM jobs
 WHERE id = $1
+LIMIT 1
 `
 
+// Get job by ID
 func (q *Queries) GetJobByID(ctx context.Context, id string) (Job, error) {
 	row := q.db.QueryRow(ctx, getJobByID, id)
 	var i Job
@@ -669,29 +674,31 @@ func (q *Queries) ListDataSources(ctx context.Context, arg ListDataSourcesParams
 }
 
 const listJobs = `-- name: ListJobs :many
-SELECT id, status, created_at, updated_at, started_at, finished_at FROM jobs
+SELECT id, status, created_at, updated_at, started_at, finished_at
+FROM jobs
 WHERE
-    ($3::text IS NULL OR status = $3)
+    ($1::TEXT IS NULL OR status = $1)
 AND
-    ($4::text IS NULL OR id::text ILIKE '%' || $4 || '%')
-ORDER BY updated_at DESC
-LIMIT $1
-OFFSET $2
+    ($2::TEXT IS NULL OR id ILIKE '%' || $2 || '%')
+ORDER BY created_at DESC
+LIMIT $4
+OFFSET $3
 `
 
 type ListJobsParams struct {
-	Limit  int32
-	Offset int32
 	Status pgtype.Text
 	Search pgtype.Text
+	Offset int32
+	Limit  int32
 }
 
+// List jobs with pagination and filtering
 func (q *Queries) ListJobs(ctx context.Context, arg ListJobsParams) ([]Job, error) {
 	rows, err := q.db.Query(ctx, listJobs,
-		arg.Limit,
-		arg.Offset,
 		arg.Status,
 		arg.Search,
+		arg.Offset,
+		arg.Limit,
 	)
 	if err != nil {
 		return nil, err

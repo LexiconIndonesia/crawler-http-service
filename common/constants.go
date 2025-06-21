@@ -3,9 +3,6 @@ package common
 const (
 	// AppName is the name of the application
 	AppName = "lexicon-crawler"
-
-	// GCS constants
-	GCSBucketName = "lexicon-bo-bucket"
 )
 
 // CrawlerType represents the type of crawler

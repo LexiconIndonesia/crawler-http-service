@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/config"
 	"github.com/LexiconIndonesia/crawler-http-service/common/redis"
@@ -55,6 +56,13 @@ func SetupDatabase(ctx context.Context, cfg config.Config) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing database config: %w", err)
 	}
+
+	// Configure connection pool for better performance and reliability
+	config.MaxConns = 20                       // Maximum number of connections in the pool
+	config.MinConns = 5                        // Minimum number of connections to maintain
+	config.MaxConnLifetime = 30 * time.Minute  // Maximum lifetime of a connection
+	config.MaxConnIdleTime = 5 * time.Minute   // Maximum idle time of a connection
+	config.HealthCheckPeriod = 1 * time.Minute // How often to check connection health
 
 	// Setup logger
 	logger := zerolog.NewLogger(log.Logger)

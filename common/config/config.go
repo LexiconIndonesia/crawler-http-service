@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+
+	"github.com/rs/zerolog/log"
 )
 
 func getEnv(key, defaultValue string) string {
@@ -110,23 +112,62 @@ func defaultHostConfig() hostConfig {
 }
 
 type natsConfig struct {
-	URL      string
-	Username string
-	Password string
+	Host             string
+	Port             uint
+	Username         string
+	Password         string
+	JetStreamEnabled bool
+	PortMonitoring   uint
 }
 
 func (c *natsConfig) loadFromEnv() {
-	c.URL = getEnv("NATS_URL", "nats://localhost:4222")
-	c.Username = getEnv("NATS_USERNAME", "")
+	c.Host = getEnv("NATS_HOST", "localhost")
+
+	// Load port with default 4222
+	if portStr := getEnv("NATS_PORT", "4222"); portStr != "" {
+		if port, err := strconv.Atoi(portStr); err == nil {
+			c.Port = uint(port)
+		} else {
+			c.Port = 4222
+		}
+	} else {
+		c.Port = 4222
+	}
+
+	c.Username = getEnv("NATS_USER", "")
 	c.Password = getEnv("NATS_PASSWORD", "")
 
+	// Load JetStream enabled flag
+	if jsEnabled := getEnv("NATS_JETSTREAM_ENABLED", "true"); jsEnabled == "true" {
+		c.JetStreamEnabled = true
+	} else {
+		c.JetStreamEnabled = false
+	}
+
+	// Load monitoring port
+	if portMonitorStr := getEnv("NATS_PORT_MONITORING", "8222"); portMonitorStr != "" {
+		if portMonitor, err := strconv.Atoi(portMonitorStr); err == nil {
+			c.PortMonitoring = uint(portMonitor)
+		} else {
+			c.PortMonitoring = 8222
+		}
+	} else {
+		c.PortMonitoring = 8222
+	}
+}
+
+func (c *natsConfig) URL() string {
+	return fmt.Sprintf("nats://%s:%d", c.Host, c.Port)
 }
 
 func defaultNatsConfig() natsConfig {
 	return natsConfig{
-		URL:      "nats://localhost:4222",
-		Username: "",
-		Password: "",
+		Host:             "localhost",
+		Port:             4222,
+		Username:         "",
+		Password:         "",
+		JetStreamEnabled: true,
+		PortMonitoring:   8222,
 	}
 }
 
@@ -165,6 +206,7 @@ func (r *redisConfig) loadFromEnv() {
 			r.DB = db
 		}
 	}
+	log.Info().Interface("redis", r).Msg("Redis config loaded")
 }
 
 func defaultRedisConfig() redisConfig {
@@ -176,20 +218,23 @@ func defaultRedisConfig() redisConfig {
 	}
 }
 
-type gcsConfig struct {
+type GCSConfig struct {
 	ProjectID       string
 	CredentialsFile string
+	Bucket          string
 }
 
-func (g *gcsConfig) loadFromEnv() {
+func (g *GCSConfig) loadFromEnv() {
 	g.ProjectID = getEnv("GCS_PROJECT_ID", "")
 	g.CredentialsFile = getEnv("GCS_CREDENTIALS_FILE", "")
+	g.Bucket = getEnv("GCS_STORAGE_BUCKET", "")
 }
 
-func defaultGcsConfig() gcsConfig {
-	return gcsConfig{
+func defaultGcsConfig() GCSConfig {
+	return GCSConfig{
 		ProjectID:       "",
 		CredentialsFile: "",
+		Bucket:          "",
 	}
 }
 
@@ -200,7 +245,7 @@ type Config struct {
 	Security securityConfig
 	Nats     natsConfig
 	Redis    redisConfig
-	GCS      gcsConfig
+	GCS      GCSConfig
 }
 
 func (c *Config) LoadFromEnv() {

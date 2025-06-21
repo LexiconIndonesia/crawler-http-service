@@ -14,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"github.com/rs/zerolog/log"
 )
 
 type CrawlerHandler struct {
@@ -79,14 +80,15 @@ func (h *CrawlerHandler) handleRunCrawler(w http.ResponseWriter, r *http.Request
 	req.Payload = payload
 
 	// publish message
-	topic := fmt.Sprintf("%s.%s", ds.ID, p.Action)
+	topic := fmt.Sprintf("%s.frontier", ds.Name)
 	msg, err := json.Marshal(req)
 	if err != nil {
 		utils.WriteError(w, http.StatusInternalServerError, "Failed to marshal message")
 		return
 	}
 
-	if err := h.broker.Publish(topic, msg); err != nil {
+	if err := h.broker.PublishSync(r.Context(), topic, msg); err != nil {
+		log.Error().Err(err).Msg("Failed to publish message")
 		utils.WriteError(w, http.StatusInternalServerError, "Failed to publish message")
 		return
 	}

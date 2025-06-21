@@ -2,15 +2,19 @@ package crawler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
+	"time"
 
-	"github.com/LexiconIndonesia/crawler-http-service/common/constants"
+	"github.com/LexiconIndonesia/crawler-http-service/common/config"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -28,7 +32,7 @@ func RegisterCrawler(name string, creator CrawlerCreator) {
 	crawlerRegistry[name] = creator
 }
 
-func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsBroker, dbConn *db.DB) error {
+func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsBroker, dbConn *db.DB, gcsConfig config.GCSConfig) error {
 
 	// get all datasources
 	dataSources, err := dbConn.Queries.GetActiveDataSources(ctx)
@@ -42,10 +46,29 @@ func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 	for _, ds := range dataSources {
 		datasourceMap[ds.Name] = ds
 	}
+
+	dsNames := make([]string, 0, len(datasourceMap))
+	for k := range datasourceMap {
+		dsNames = append(dsNames, k)
+	}
+	log.Info().Strs("datasources_from_db", dsNames).Msg("Active data sources")
+
+	regNames := make([]string, 0, len(GetCrawlerRegistry()))
+	for k := range GetCrawlerRegistry() {
+		regNames = append(regNames, k)
+	}
+	log.Info().Strs("registry_crawlers", regNames).Msg("Crawler registry contents")
+
 	// Register all crawlers to listen to NATS messages
 	for name, creator := range GetCrawlerRegistry() {
 
-		dataSource := datasourceMap[name]
+		log.Info().Str("crawler_name", name).Msg("Processing crawler from registry")
+
+		dataSource, exists := datasourceMap[name]
+		if !exists {
+			log.Warn().Str("crawler_name", name).Msg("Skipping crawler registration - data source not found in database")
+			continue
+		}
 
 		baseCrawlerConfig := DefaultBaseCrawlerConfig()
 		baseCrawlerConfig.DataSource = dataSource
@@ -56,11 +79,60 @@ func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 			return fmt.Errorf("failed to create crawler: %w", err)
 		}
 
-		crawler.Setup(ctx)
+		if err := crawler.Setup(ctx); err != nil {
+			return fmt.Errorf("failed to setup crawler %s: %w", name, err)
+		}
+
+		consumer, err := messaging.GetJetStreamConsumer(natsClient, "crawler-workers", fmt.Sprintf("%s.frontier", dataSource.Name))
+		if err != nil {
+			log.Error().Err(err).Str("crawler_name", name).Msg("Failed to get JetStream consumer")
+			continue
+		}
+		if consumer == nil {
+			log.Warn().Str("crawler_name", name).Msg("Skipping crawler registration - consumer is nil")
+			continue
+		}
+
+		go func(c Crawler) {
+			for {
+				select {
+				case <-ctx.Done():
+					log.Info().Str("crawler_name", name).Msg("Context cancelled, stopping consumer.")
+					return
+				default:
+				}
+
+				batch, err := consumer.Fetch(5, jetstream.FetchMaxWait(5*time.Second))
+				if err != nil {
+					if errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
+						continue
+					}
+					log.Error().Err(err).Str("crawler_name", name).Msg("Failed to fetch messages")
+					time.Sleep(1 * time.Second)
+					continue
+				}
+
+				for msg := range batch.Messages() {
+					err := c.Consume(ctx, msg.Data())
+					if err != nil {
+						log.Error().Err(err).Str("crawler_name", name).Msg("Failed to consume message")
+						if err := msg.Nak(); err != nil {
+							log.Error().Err(err).Str("crawler_name", name).Msg("Failed to NAK message")
+						}
+					} else {
+						if err := msg.Ack(); err != nil {
+							log.Error().Err(err).Str("crawler_name", name).Msg("Failed to ACK message")
+						}
+					}
+				}
+				if batch.Error() != nil {
+					log.Error().Err(batch.Error()).Str("crawler_name", name).Msg("Error during message batch processing")
+				}
+			}
+		}(crawler)
 	}
 
 	return nil
-
 }
 
 // GetCrawlerRegistry returns the crawler registry
@@ -81,7 +153,7 @@ func RegisterScraper(name string, creator ScraperCreator) {
 	scraperRegistry[name] = creator
 }
 
-func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsBroker, dbConn *db.DB) error {
+func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsBroker, dbConn *db.DB, gcsConfig config.GCSConfig) error {
 
 	// get all datasources
 	dataSources, err := dbConn.Queries.GetActiveDataSources(ctx)
@@ -94,15 +166,35 @@ func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 		datasourceMap[ds.Name] = ds
 	}
 
+	dsNames := make([]string, 0, len(datasourceMap))
+	for k := range datasourceMap {
+		dsNames = append(dsNames, k)
+	}
+	log.Info().Strs("datasources_from_db", dsNames).Msg("Active data sources for scrapers")
+
+	regNames := make([]string, 0, len(GetScraperRegistry()))
+	for k := range GetScraperRegistry() {
+		regNames = append(regNames, k)
+	}
+	log.Info().Strs("registry_scrapers", regNames).Msg("Scraper registry contents")
+
 	// Register all scrapers to listen to NATS messages
 	for name, creator := range GetScraperRegistry() {
 
+		log.Info().Str("scraper_name", name).Msg("Processing scraper from registry")
+
 		dataSource, ok := datasourceMap[name]
 		if !ok {
-			continue // or log a warning
+			log.Warn().Str("scraper_name", name).Msg("Skipping scraper registration - data source not found in database")
+			continue
 		}
 
-		baseScraperConfig := DefaultBaseScraperConfig()
+		if gcsConfig.Bucket == "" {
+			log.Error().Msg("Storage bucket is not set, skipping scraper registration")
+			return fmt.Errorf("storage bucket is not set, skipping scraper registration")
+		}
+
+		baseScraperConfig := DefaultBaseScraperConfigWithBucket(gcsConfig.Bucket)
 		baseScraperConfig.DataSource = dataSource
 
 		// Create a new scraper
@@ -115,22 +207,53 @@ func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 			return fmt.Errorf("failed to setup scraper %s: %w", name, err)
 		}
 
-		// Subscribe to scrape topics
-		scrapeAllTopic := fmt.Sprintf("%s.%s", dataSource.ID, constants.ScrapeAllAction)
-		_, err = messaging.SubscribeToQueueGroup(natsClient, scrapeAllTopic, "scraper-workers", func(msg *nats.Msg) error {
-			return scraper.Consume(ctx, msg.Data)
-		})
+		consumer, err := messaging.GetJetStreamConsumer(natsClient, "scraper-workers", fmt.Sprintf("%s.extraction", dataSource.Name))
 		if err != nil {
-			return fmt.Errorf("failed to subscribe to topic %s: %w", scrapeAllTopic, err)
+			log.Error().Err(err).Str("scraper_name", name).Msg("Failed to get JetStream consumer")
+			continue
+		}
+		if consumer == nil {
+			log.Warn().Str("scraper_name", name).Msg("Skipping scraper registration - consumer is nil")
+			continue
 		}
 
-		scrapeByIDTopic := fmt.Sprintf("%s.%s", dataSource.ID, constants.ScrapeByIDAction)
-		_, err = messaging.SubscribeToQueueGroup(natsClient, scrapeByIDTopic, "scraper-workers", func(msg *nats.Msg) error {
-			return scraper.Consume(ctx, msg.Data)
-		})
-		if err != nil {
-			return fmt.Errorf("failed to subscribe to topic %s: %w", scrapeByIDTopic, err)
-		}
+		go func(s Scraper) {
+			for {
+				select {
+				case <-ctx.Done():
+					log.Info().Str("scraper_name", name).Msg("Context cancelled, stopping consumer.")
+					return
+				default:
+				}
+
+				batch, err := consumer.Fetch(5, jetstream.FetchMaxWait(5*time.Second))
+				if err != nil {
+					if errors.Is(err, nats.ErrTimeout) || errors.Is(err, context.DeadlineExceeded) {
+						continue
+					}
+					log.Error().Err(err).Str("scraper_name", name).Msg("Failed to fetch messages")
+					time.Sleep(1 * time.Second)
+					continue
+				}
+
+				for msg := range batch.Messages() {
+					err := s.Consume(ctx, msg.Data())
+					if err != nil {
+						log.Error().Err(err).Str("scraper_name", name).Msg("Failed to consume message")
+						if err := msg.Nak(); err != nil {
+							log.Error().Err(err).Str("scraper_name", name).Msg("Failed to NAK message")
+						}
+					} else {
+						if err := msg.Ack(); err != nil {
+							log.Error().Err(err).Str("scraper_name", name).Msg("Failed to ACK message")
+						}
+					}
+				}
+				if batch.Error() != nil {
+					log.Error().Err(batch.Error()).Str("scraper_name", name).Msg("Error during message batch processing")
+				}
+			}
+		}(scraper)
 	}
 
 	return nil

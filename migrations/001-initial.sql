@@ -105,27 +105,23 @@ CREATE INDEX idx_extraction_version_extraction ON extraction_versions (extractio
 CREATE TABLE "crawler_logs" (
   "id" varchar(64) NOT NULL PRIMARY KEY,
   "data_source_id" varchar(64) NOT NULL,
-  "url_frontier_id" varchar(64) NULL,
-  "jobs_id" varchar(64) NULL,
+  "job_id" varchar(64) NULL,
   "event_type" varchar(100) NOT NULL, -- start, end, error, warning, etc.
   "message" text NULL,
   "details" jsonb NULL, -- For storing structured log data and context
   "created_at" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_crawler_logs_data_source FOREIGN KEY (data_source_id) REFERENCES data_sources(id),
-  CONSTRAINT fk_crawler_logs_url_frontier FOREIGN KEY (url_frontier_id) REFERENCES url_frontiers(id)
 );
 COMMENT ON COLUMN "crawler_logs"."details" IS 'Stores structured log data including context, parameters, and results';
 
 -- Create index for data_source_id
 CREATE INDEX idx_logs_data_source ON crawler_logs (data_source_id);
 
--- Create index for url_frontier_id
-CREATE INDEX idx_logs_url_frontier ON crawler_logs (url_frontier_id);
 
 -- Create index for event_type
 CREATE INDEX idx_logs_event_type ON crawler_logs (event_type);
 
--- Create index for jobs_id
-CREATE INDEX idx_logs_jobs_id ON crawler_logs (jobs_id);
+-- Create index for job_id
+CREATE INDEX idx_logs_job_id ON crawler_logs (job_id);
 
 

@@ -2,7 +2,6 @@ package crawler
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -41,7 +40,14 @@ type BaseScraperConfig struct {
 
 // DefaultBaseScraperConfig returns the default configuration for a scraper
 func DefaultBaseScraperConfig() BaseScraperConfig {
+	return DefaultBaseScraperConfigWithBucket("")
+}
+
+// DefaultBaseScraperConfigWithBucket returns the default configuration for a scraper with a specific storage bucket
+func DefaultBaseScraperConfigWithBucket(storageBucket string) BaseScraperConfig {
+
 	return BaseScraperConfig{
+		StorageBucket:  storageBucket,
 		RetryAttempts:  3,
 		RetryDelay:     time.Second * 2,
 		RequestTimeout: time.Second * 30,
@@ -127,31 +133,6 @@ func (s *BaseScraper) SaveExtractionBatch(ctx context.Context, extractions []rep
 
 	log.Debug().Int("count", len(savedExtractions)).Msg("Saved extractions batch")
 	return savedExtractions, nil
-}
-
-// PublishExtraction publishes an extraction to the message broker
-func (s *BaseScraper) PublishExtraction(ctx context.Context, extraction repository.Extraction, topic string) error {
-	if s.MessageBroker == nil {
-		return fmt.Errorf("message broker not initialized")
-	}
-
-	msg, err := json.Marshal(extraction)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to marshal extraction to JSON")
-		return err
-	}
-
-	if topic == "" {
-		topic = "extractions"
-	}
-
-	if err := s.MessageBroker.Publish(topic, msg); err != nil {
-		log.Error().Err(err).Str("topic", topic).Msg("Failed to publish extraction to message broker")
-		return err
-	}
-
-	log.Debug().Str("id", extraction.ID).Str("topic", topic).Msg("Published extraction to message broker")
-	return nil
 }
 
 // UploadFileToStorage uploads a file to the storage service

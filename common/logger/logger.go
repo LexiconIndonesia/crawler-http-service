@@ -34,10 +34,6 @@ func (h *CrawlerLogHook) Run(e *zerolog.Event, level zerolog.Level, msg string) 
 		return
 	}
 
-	// Create a new context with 5 second timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	// Since zerolog.Event doesn't expose its fields directly, we'll use
 	// the base LogEvent structure and enhance it as needed
 	logEvent := LogEvent{
@@ -47,15 +43,32 @@ func (h *CrawlerLogHook) Run(e *zerolog.Event, level zerolog.Level, msg string) 
 
 	// This is done asynchronously to not block the logging
 	go func() {
-		if err := h.logToDatabase(ctx, logEvent); err != nil {
+		if err := h.logToDatabase(logEvent); err != nil {
 			// Log the error but don't use the hook to avoid potential infinite recursion
+			// Use a simple log to avoid recursion
 			log.Error().Err(err).Msg("Failed to log to database via hook")
 		}
 	}()
 }
 
-// logToDatabase stores the log in the database
-func (h *CrawlerLogHook) logToDatabase(ctx context.Context, event LogEvent) error {
+// logToDatabase stores the log in the database with improved error handling
+func (h *CrawlerLogHook) logToDatabase(event LogEvent) error {
+	// Skip logging if both data source ID and URL frontier ID are empty to avoid foreign key constraint violations
+	if event.DataSourceID == "" {
+		return nil
+	}
+
+	// Create a context with a shorter timeout to avoid blocking
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	// Check if database is available first
+	if err := h.db.Ping(ctx); err != nil {
+		// Database is not available, log to console only
+		log.Warn().Err(err).Msg("Database unavailable, skipping log storage")
+		return nil // Don't return error to avoid infinite recursion
+	}
+
 	// Generate a unique ID for the log
 	logID := uuid.New().String()
 
@@ -70,17 +83,6 @@ func (h *CrawlerLogHook) logToDatabase(ctx context.Context, event LogEvent) erro
 		}
 	} else {
 		detailsJSON = json.RawMessage("{}")
-	}
-
-	// Create URL frontier ID if provided
-	var urlFrontierID pgtype.Text
-	if event.URLFrontierID != "" {
-		urlFrontierID = pgtype.Text{
-			String: event.URLFrontierID,
-			Valid:  true,
-		}
-	} else {
-		urlFrontierID = pgtype.Text{Valid: false}
 	}
 
 	var jobID pgtype.Text
@@ -101,18 +103,26 @@ func (h *CrawlerLogHook) logToDatabase(ctx context.Context, event LogEvent) erro
 
 	// Insert into database
 	logParams := repository.CreateCrawlerLogParams{
-		ID:            logID,
-		DataSourceID:  event.DataSourceID,
-		UrlFrontierID: urlFrontierID,
-		JobsID:        jobID,
-		EventType:     event.EventType,
-		Message:       message,
-		Details:       detailsJSON,
-		CreatedAt:     time.Now(),
+		ID:           logID,
+		DataSourceID: event.DataSourceID,
+		JobID:        jobID,
+		EventType:    event.EventType,
+		Message:      message,
+		Details:      detailsJSON,
+		CreatedAt:    time.Now(),
 	}
 
 	_, err := h.db.Queries.CreateCrawlerLog(ctx, logParams)
-	return err
+	if err != nil {
+		// Check if it's a context timeout or connection issue
+		if ctx.Err() == context.DeadlineExceeded {
+			log.Warn().Msg("Database log write timed out, continuing without storage")
+			return nil // Don't return error to avoid infinite recursion
+		}
+		return err
+	}
+
+	return nil
 }
 
 // ContextualCrawlerLogHook is an extension of the basic hook that can extract context
@@ -134,10 +144,6 @@ func (h *ContextualCrawlerLogHook) Run(e *zerolog.Event, level zerolog.Level, ms
 		return
 	}
 
-	// Create a new context with 5 second timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
 	// This is done asynchronously to not block the logging
 	go func() {
 		// Create a base log event
@@ -154,11 +160,6 @@ func (h *ContextualCrawlerLogHook) Run(e *zerolog.Event, level zerolog.Level, ms
 			logEvent.DataSourceID = match
 		}
 
-		// Try to extract urlFrontierID - often logged as "urlFrontierID=xyz"
-		if match := extractField(msg, "urlFrontierID"); match != "" {
-			logEvent.URLFrontierID = match
-		}
-
 		if match := extractField(msg, "jobID"); match != "" {
 			logEvent.JobID = match
 		}
@@ -169,7 +170,7 @@ func (h *ContextualCrawlerLogHook) Run(e *zerolog.Event, level zerolog.Level, ms
 			logEvent.Details = details
 		}
 
-		if err := h.logToDatabase(ctx, logEvent); err != nil {
+		if err := h.logToDatabase(logEvent); err != nil {
 			// Log the error but don't use the hook to avoid potential infinite recursion
 			log.Error().Err(err).Msg("Failed to log to database via hook")
 		}
@@ -216,12 +217,11 @@ type LogService struct {
 
 // LogEvent represents a log event
 type LogEvent struct {
-	DataSourceID  string
-	URLFrontierID string
-	JobID         string
-	EventType     string
-	Message       string
-	Details       interface{}
+	DataSourceID string
+	JobID        string
+	EventType    string
+	Message      string
+	Details      interface{}
 }
 
 // InitializeLogging sets up global zerolog configuration with database hooks
@@ -242,6 +242,11 @@ func NewLogService(db *db.DB) *LogService {
 
 // Log creates a log entry in the database
 func (s *LogService) Log(ctx context.Context, event LogEvent) error {
+	// Skip logging if both data source ID and URL frontier ID are empty to avoid foreign key constraint violations
+	if event.DataSourceID == "" {
+		return nil
+	}
+
 	// Generate a unique ID for the log
 	logID := uuid.New().String()
 
@@ -256,17 +261,6 @@ func (s *LogService) Log(ctx context.Context, event LogEvent) error {
 		}
 	} else {
 		detailsJSON = json.RawMessage("{}")
-	}
-
-	// Create URL frontier ID if provided
-	var urlFrontierID pgtype.Text
-	if event.URLFrontierID != "" {
-		urlFrontierID = pgtype.Text{
-			String: event.URLFrontierID,
-			Valid:  true,
-		}
-	} else {
-		urlFrontierID = pgtype.Text{Valid: false}
 	}
 
 	var jobID pgtype.Text
@@ -285,21 +279,45 @@ func (s *LogService) Log(ctx context.Context, event LogEvent) error {
 		Valid:  event.Message != "",
 	}
 
-	// Insert into database
+	// Insert into database with retry mechanism
 	logParams := repository.CreateCrawlerLogParams{
-		ID:            logID,
-		DataSourceID:  event.DataSourceID,
-		UrlFrontierID: urlFrontierID,
-		JobsID:        jobID,
-		EventType:     event.EventType,
-		Message:       message,
-		Details:       detailsJSON,
-		CreatedAt:     time.Now(),
+		ID:           logID,
+		DataSourceID: event.DataSourceID,
+		JobID:        jobID,
+		EventType:    event.EventType,
+		Message:      message,
+		Details:      detailsJSON,
+		CreatedAt:    time.Now(),
 	}
 
-	if _, err := s.db.Queries.CreateCrawlerLog(ctx, logParams); err != nil {
-		log.Error().Err(err).Msg("Failed to insert log into database")
-		return err
+	// Try to insert with retries
+	var err error
+	for attempt := 1; attempt <= 3; attempt++ {
+		// Create a context with timeout for each attempt
+		insertCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+
+		_, err = s.db.Queries.CreateCrawlerLog(insertCtx, logParams)
+		cancel()
+
+		if err == nil {
+			break // Success, exit retry loop
+		}
+
+		// Check if it's a context timeout or connection issue
+		if insertCtx.Err() == context.DeadlineExceeded {
+			log.Warn().Int("attempt", attempt).Msg("Database log write timed out, retrying...")
+			time.Sleep(time.Duration(attempt) * 100 * time.Millisecond) // Exponential backoff
+			continue
+		}
+
+		// For other errors, don't retry
+		break
+	}
+
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to insert log into database after retries")
+		// Don't return error to avoid breaking the application flow
+		// Just log to console and continue
 	}
 
 	// Also log to console for visibility
@@ -307,10 +325,6 @@ func (s *LogService) Log(ctx context.Context, event LogEvent) error {
 
 	if event.DataSourceID != "" {
 		logEntry = logEntry.Str("dataSourceID", event.DataSourceID)
-	}
-
-	if event.URLFrontierID != "" {
-		logEntry = logEntry.Str("urlFrontierID", event.URLFrontierID)
 	}
 
 	if event.JobID != "" {
@@ -345,82 +359,29 @@ func (s *LogService) Error(ctx context.Context, dataSourceID, urlFrontierID, mes
 	}
 
 	return s.Log(ctx, LogEvent{
-		DataSourceID:  dataSourceID,
-		URLFrontierID: urlFrontierID,
-		EventType:     "error",
-		Message:       message,
-		Details:       detailMap,
-	})
-}
-
-// CrawlStart logs the start of a crawl operation
-func (s *LogService) CrawlStart(ctx context.Context, dataSourceID, keyword, jobID string) error {
-	return s.Log(ctx, LogEvent{
 		DataSourceID: dataSourceID,
-		EventType:    "crawl.started",
-		Message:      "Crawl operation started",
-		Details: map[string]interface{}{
-			"keyword": keyword,
-		},
-		JobID: jobID,
+		EventType:    "error",
+		Message:      message,
+		Details:      detailMap,
 	})
 }
 
-// CrawlComplete logs the completion of a crawl operation
-func (s *LogService) CrawlComplete(ctx context.Context, dataSourceID string, resultsCount int) error {
-	return s.Log(ctx, LogEvent{
-		DataSourceID: dataSourceID,
-		EventType:    "crawl.completed",
-		Message:      "Crawl operation completed",
-		Details: map[string]interface{}{
-			"results_count": resultsCount,
-		},
-	})
+// CheckDatabaseHealth checks if the database is available for logging
+func (s *LogService) CheckDatabaseHealth(ctx context.Context) error {
+	// Create a short timeout for health check
+	healthCtx, cancel := context.WithTimeout(ctx, 1*time.Second)
+	defer cancel()
+
+	return s.db.Ping(healthCtx)
 }
 
-// ExtractStart logs the start of an extraction operation
-func (s *LogService) ExtractStart(ctx context.Context, dataSourceID, urlFrontierID, url string) error {
-	return s.Log(ctx, LogEvent{
-		DataSourceID:  dataSourceID,
-		URLFrontierID: urlFrontierID,
-		EventType:     "extract.started",
-		Message:       "Extraction started",
-		Details: map[string]interface{}{
-			"url": url,
-		},
-	})
-}
-
-// ExtractComplete logs the completion of an extraction operation
-func (s *LogService) ExtractComplete(ctx context.Context, dataSourceID, urlFrontierID, extractionID string, changed bool, version int) error {
-	statusText := "unchanged"
-	if changed {
-		statusText = "changed"
+// GetDatabaseStats returns basic statistics about the database connection
+func (s *LogService) GetDatabaseStats() map[string]interface{} {
+	stats := s.db.Pool.Stat()
+	return map[string]interface{}{
+		"total_connections":        stats.TotalConns(),
+		"idle_connections":         stats.IdleConns(),
+		"acquired_connections":     stats.AcquiredConns(),
+		"constructing_connections": stats.ConstructingConns(),
 	}
-
-	return s.Log(ctx, LogEvent{
-		DataSourceID:  dataSourceID,
-		URLFrontierID: urlFrontierID,
-		EventType:     "extract.completed",
-		Message:       "Extraction completed, content " + statusText,
-		Details: map[string]interface{}{
-			"extraction_id": extractionID,
-			"changed":       changed,
-			"version":       version,
-		},
-	})
-}
-
-// GetLogsByDataSource retrieves logs for a specific data source with pagination
-func (s *LogService) GetLogsByDataSource(ctx context.Context, dataSourceID string, limit, offset int) ([]repository.CrawlerLog, error) {
-	// This would need a custom query in the repository
-	// For demonstration purposes, we'll return nil and an error
-	return nil, nil
-}
-
-// GetLogsByURLFrontier retrieves logs for a specific URL frontier with pagination
-func (s *LogService) GetLogsByURLFrontier(ctx context.Context, urlFrontierID string, limit, offset int) ([]repository.CrawlerLog, error) {
-	// This would need a custom query in the repository
-	// For demonstration purposes, we'll return nil and an error
-	return nil, nil
 }

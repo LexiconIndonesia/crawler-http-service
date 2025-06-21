@@ -233,13 +233,13 @@ INSERT INTO extraction_versions (
 
 -- Create a new crawler log entry
 -- name: CreateCrawlerLog :one
-INSERT INTO crawler_logs (id, data_source_id, url_frontier_id,  event_type, message, details, created_at, jobs_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO crawler_logs (id, data_source_id,  event_type, message, details, created_at, job_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 
 -- Get crawler logs by job ID
 -- name: GetCrawlerLogsByJobId :many
-SELECT * FROM crawler_logs WHERE jobs_id = $1 ORDER BY created_at DESC;
+SELECT * FROM crawler_logs WHERE job_id = $1 ORDER BY created_at DESC;
 
 -- =============================================
 -- Jobs Table Operations
@@ -262,3 +262,31 @@ SET
     updated_at = NOW()
 WHERE id = $1
 RETURNING id, status, created_at, updated_at, started_at, finished_at;
+
+-- Get job by ID
+-- name: GetJobByID :one
+SELECT id, status, created_at, updated_at, started_at, finished_at
+FROM jobs
+WHERE id = $1
+LIMIT 1;
+
+-- List jobs with pagination and filtering
+-- name: ListJobs :many
+SELECT id, status, created_at, updated_at, started_at, finished_at
+FROM jobs
+WHERE
+    (sqlc.narg('status')::TEXT IS NULL OR status = sqlc.narg('status'))
+AND
+    (sqlc.narg('search')::TEXT IS NULL OR id ILIKE '%' || sqlc.narg('search') || '%')
+ORDER BY created_at DESC
+LIMIT sqlc.arg('limit')
+OFFSET sqlc.arg('offset');
+
+-- Count jobs with filtering
+-- name: CountJobs :one
+SELECT count(*)
+FROM jobs
+WHERE
+    (sqlc.narg('status')::TEXT IS NULL OR status = sqlc.narg('status'))
+AND
+    (sqlc.narg('search')::TEXT IS NULL OR id ILIKE '%' || sqlc.narg('search') || '%');

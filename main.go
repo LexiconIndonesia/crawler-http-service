@@ -20,9 +20,12 @@ import (
 
 	"github.com/joho/godotenv"
 
-	_ "github.com/LexiconIndonesia/crawler-http-service/docs"
 	_ "github.com/samber/lo"
 	_ "github.com/samber/mo"
+
+	_ "github.com/LexiconIndonesia/crawler-http-service/crawlers/indonesia-supreme-court"
+	_ "github.com/LexiconIndonesia/crawler-http-service/crawlers/lkpp-blacklist"
+	_ "github.com/LexiconIndonesia/crawler-http-service/crawlers/singapore-supreme-court"
 )
 
 // @title          Go HTTP Service API
@@ -53,6 +56,7 @@ func main() {
 
 	cfg := config.DefaultConfig()
 	cfg.LoadFromEnv()
+	log.Info().Interface("config", cfg).Msg("Config loaded")
 
 	// Create a base context with cancel for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -87,11 +91,6 @@ func main() {
 	}
 	defer redisClient.Close()
 
-	// Setup global subscriptions
-	if err := messaging.SetupGlobalSubscriptions(natsClient); err != nil {
-		log.Fatal().Err(err).Msg("Failed to setup global subscriptions")
-	}
-
 	// gcs
 	gcsStorage, err := storage.NewGCSStorage(ctx, storage.GCSConfig{
 		ProjectID:       cfg.GCS.ProjectID,
@@ -100,15 +99,18 @@ func main() {
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to setup GCS storage")
 	}
-	storage.SetStorageClient(gcsStorage)
+	err = storage.SetStorageClient(gcsStorage)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to set GCS storage client")
+	}
 
 	// Register all crawlers to listen to NATS messages
-	if err := crawler.RegisterCrawlers(ctx, natsClient, dbConn); err != nil {
+	if err := crawler.RegisterCrawlers(ctx, natsClient, dbConn, cfg.GCS); err != nil {
 		log.Fatal().Err(err).Msg("Failed to register crawlers")
 	}
 	log.Info().Msg("Crawlers registered successfully")
 
-	if err := crawler.RegisterScrapers(ctx, natsClient, dbConn); err != nil {
+	if err := crawler.RegisterScrapers(ctx, natsClient, dbConn, cfg.GCS); err != nil {
 		log.Fatal().Err(err).Msg("Failed to register scrapers")
 	}
 	log.Info().Msg("Scrapers registered successfully")
