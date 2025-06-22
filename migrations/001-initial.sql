@@ -110,7 +110,7 @@ CREATE TABLE "crawler_logs" (
   "message" text NULL,
   "details" jsonb NULL, -- For storing structured log data and context
   "created_at" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT fk_crawler_logs_data_source FOREIGN KEY (data_source_id) REFERENCES data_sources(id),
+  CONSTRAINT fk_crawler_logs_data_source FOREIGN KEY (data_source_id) REFERENCES data_sources(id)
 );
 COMMENT ON COLUMN "crawler_logs"."details" IS 'Stores structured log data including context, parameters, and results';
 

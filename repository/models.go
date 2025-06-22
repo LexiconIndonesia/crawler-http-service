@@ -11,12 +11,11 @@ import (
 )
 
 type CrawlerLog struct {
-	ID            string
-	DataSourceID  string
-	UrlFrontierID pgtype.Text
-	JobID         pgtype.Text
-	EventType     string
-	Message       pgtype.Text
+	ID           string
+	DataSourceID string
+	JobID        pgtype.Text
+	EventType    string
+	Message      pgtype.Text
 	// Stores structured log data including context, parameters, and results
 	Details   []byte
 	CreatedAt time.Time

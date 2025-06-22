@@ -80,10 +80,10 @@ func (c *SingaporeSupremeCourtCrawler) Teardown(ctx context.Context) error {
 // CrawlAll crawls all available judgments
 func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID string) error {
 	l := log.Info().
-		Str("dataSource", c.BaseCrawler.Config.DataSource.Name).
+		Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
 		Str("jobID", jobID)
 
-	l.Msg("Start Crawling all judgments")
+	l.Msgf("Start Crawling all judgments dataSourceName=%s", c.BaseCrawler.Config.DataSource.Name)
 
 	startUrl, err := newStartURLCrawler(c.BaseCrawler.Config, c.Config)
 	if err != nil {
@@ -101,7 +101,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 
 	rpLast := c.browser.MustPage()
 	defer rpLast.Close()
-	lastPage, err := getLastPage(ctx, rpLast, startUrl.constructURL())
+	lastPage, err := c.getLastPage(ctx, rpLast, startUrl.constructURL())
 	if err != nil {
 		return fmt.Errorf("failed to get last page: %w", err)
 	}
@@ -150,6 +150,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 					if err != nil {
 						log.Error().
 							Err(err).
+							Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
 							Str("jobID", jobID).
 							Str("taskID", result.TaskID).
 							Int("numFrontiers", len(urlFrontiers)).
@@ -168,6 +169,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 				}
 			} else {
 				log.Error().
+					Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
 					Str("jobID", jobID).
 					Str("taskID", result.TaskID).
 					Err(result.Error).
@@ -214,6 +216,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 		if err != nil {
 			log.Error().
 				Err(err).
+				Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
 				Str("jobID", jobID).
 				Str("taskID", taskID).
 				Str("url", crawlURL.constructURL()).
@@ -225,6 +228,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 		if err := workerPool.AddTaskNonBlocking(task); err != nil {
 			log.Warn().
 				Err(err).
+				Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
 				Str("jobID", jobID).
 				Str("taskID", taskID).
 				Str("url", crawlURL.constructURL()).
@@ -234,6 +238,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 			if err := workerPool.AddTask(ctx, task); err != nil {
 				log.Error().
 					Err(err).
+					Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
 					Str("jobID", jobID).
 					Str("url", crawlURL.constructURL()).
 					Str("taskID", taskID).
@@ -265,16 +270,16 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 // CrawlByKeyword crawls judgments by keyword
 func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keyword, jobID string) error {
 	l := log.Info().
-		Str("dataSource", c.BaseCrawler.Config.DataSource.Name).
+		Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
 		Str("keyword", keyword).
 		Str("jobID", jobID)
 
-	l.Msg("Start Crawling by keyword")
+	l.Msgf("Start Crawling by keyword dataSourceID=%s", c.BaseCrawler.Config.DataSource.ID)
 
 	// Update the work manager to signal that the work has started
 	// The jobID is used as the workID
 	if err := c.workManager.Start(ctx, jobID); err != nil {
-		log.Error().Err(err).Str("jobID", jobID).Msg("Failed to start work in manager")
+		log.Error().Err(err).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to start work in manager")
 		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
 	}
 	l.Msg("Work manager started for job")
@@ -308,7 +313,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 	rpLast := c.browser.MustPage()
 	defer rpLast.Close()
 	l.Msg("Getting last page number")
-	lastPage, err := getLastPage(ctx, rpLast, startUrl.constructURL())
+	lastPage, err := c.getLastPage(ctx, rpLast, startUrl.constructURL())
 	if err != nil {
 		return fmt.Errorf("failed to get last page for keyword search: %w", err)
 	}
@@ -357,6 +362,8 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 					if err != nil {
 						log.Error().
 							Err(err).
+							Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
+							Str("jobID", jobID).
 							Str("taskID", result.TaskID).
 							Str("keyword", keyword).
 							Int("numFrontiers", len(urlFrontiers)).
@@ -375,6 +382,8 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 				}
 			} else {
 				log.Error().
+					Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
+					Str("jobID", jobID).
 					Str("taskID", result.TaskID).
 					Str("keyword", keyword).
 					Err(result.Error).
@@ -475,10 +484,10 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url, jobID string) error {
 	l := log.Info().
 		Str("url", url).
-		Str("dataSource", c.BaseCrawler.Config.DataSource.Name).
+		Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
 		Str("jobID", jobID)
 
-	l.Msg("Start Crawling by URL")
+	l.Msgf("Start Crawling by URL dataSourceID=%s", c.BaseCrawler.Config.DataSource.ID)
 
 	// Validate URL
 	if url == "" {
@@ -694,8 +703,10 @@ func (c *SingaporeSupremeCourtCrawler) ExtractElements(ctx context.Context, elem
 }
 
 func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.Page, url string) ([]repository.UrlFrontier, error) {
-	log.Info().Str("url", url).Msg("Navigating to E-Litigation URL")
-	log.Info().Msg("Crawling URL: " + url)
+	l := log.Info().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
+	e := log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
+	l.Msgf("Navigating to E-Litigation URL dataSourceName=%s", c.BaseCrawler.Config.DataSource.Name)
+	l.Msgf("Crawling URL: %s", url)
 
 	res := []repository.UrlFrontier{}
 	// Check context before starting
@@ -709,7 +720,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 	wait := rpCtx.MustWaitNavigation()
 	err := rpCtx.Navigate(url)
 	if err != nil {
-		log.Error().Err(err).Msg("Error navigating to url")
+		e.Err(err).Msg("Error navigating to url")
 		return res, err
 	}
 	wait()
@@ -725,11 +736,11 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 
 	elements, err := page.Elements("#listview > div.row > div.card.col-12")
 	if err != nil {
-		log.Error().Err(err).Msg("Error getting elements")
+		e.Err(err).Msg("Error getting elements")
 		return res, err
 	}
 
-	log.Info().Msgf("Found %d elements", len(elements))
+	l.Int("elementsFound", len(elements)).Msg("Found elements")
 
 	// Process each element found
 	processedCount := 0
@@ -743,22 +754,21 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 
 		crawlerResult, err := c.ExtractElements(ctx, element)
 		if err != nil {
-			log.Error().Err(err).Msg("Error extracting elements")
+			e.Err(err).Msg("Error extracting elements")
 			continue
 		}
 
 		// Only process if we actually got a valid result
 		if crawlerResult.Url != "" {
 			processedCount++
-			log.Info().Msg("Crawler result: " + crawlerResult.Url)
+			l.Str("url", crawlerResult.Url).Msg("Crawler result")
 
 			// Here you would typically save the URL frontier or process it further
 			// For example: c.SaveUrlFrontier(ctx, crawlerResult)
 		}
 	}
 
-	log.Info().
-		Str("url", url).
+	l.
 		Int("elementsFound", len(elements)).
 		Int("elementsProcessed", processedCount).
 		Msg("Crawling page completed")
@@ -768,13 +778,15 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 
 // Consume processes a message from a queue
 func (c *SingaporeSupremeCourtCrawler) Consume(ctx context.Context, message []byte) error {
+	l := log.Info().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
+	e := log.Error().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
 	var msg messaging.CrawlRequest
 	if err := json.Unmarshal(message, &msg); err != nil {
-		log.Error().Err(err).Msg("Failed to unmarshal crawl request")
+		e.Err(err).Msg("Failed to unmarshal crawl request")
 		return err
 	}
 
-	log.Info().Msgf("Consuming message: %+v", msg)
+	l.Msgf("Consuming message: %+v", msg)
 
 	switch msg.Type {
 	case constants.CrawlAllAction:
@@ -792,7 +804,7 @@ func (c *SingaporeSupremeCourtCrawler) Consume(ctx context.Context, message []by
 func (c *SingaporeSupremeCourtCrawler) createPage() (*rod.Page, error) {
 	incognito, err := c.browser.Incognito()
 	if err != nil {
-		log.Error().Err(err).Msg("Error creating incognito page")
+		log.Error().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error creating incognito page")
 		return nil, err
 	}
 
@@ -803,47 +815,49 @@ func (c *SingaporeSupremeCourtCrawler) crawlingJob(pagePool *rod.Pool[rod.Page],
 	result := []repository.UrlFrontier{}
 	page, err := pagePool.Get(c.createPage)
 	if err != nil {
-		log.Error().Err(err).Msg("Error getting page")
+		log.Error().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error getting page")
 		return result, err
 	}
 	defer pagePool.Put(page)
 	return c.CrawlPage(ctx, page, urlPage)
 }
 
-func getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, int], error) {
+func (c *SingaporeSupremeCourtCrawler) getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, int], error) {
 	lastPage := 0
 
-	log.Info().Str("url", url).Msg("Getting last page")
+	l := log.Info().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
+	e := log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
+	l.Msg("Getting last page")
 	if err := rp.Context(ctx).Navigate(url); err != nil {
 		if err == context.Canceled {
 			return lo.Tuple2[int, int]{}, err
 		}
-		log.Error().Err(err).Msg("Error navigating to url")
+		e.Err(err).Msg("Error navigating to url")
 		return lo.Tuple2[int, int]{}, err
 	}
-	log.Info().Msg("Navigation completed")
+	l.Msg("Navigation completed")
 	totalResult := 0
 	totalResultElement, err := rp.Element("#listview > div.row.justify-content-between.align-items-center > div.gd-csummary")
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting total result element")
 		return lo.Tuple2[int, int]{}, err
 	}
-	log.Info().Msg("Found total result element")
+	l.Msg("Found total result element")
 	res, err := totalResultElement.HTML()
 	if err != nil {
-		log.Error().Err(err).Msg("Error getting total result element")
+		e.Err(err).Msg("Error getting total result element")
 		return lo.Tuple2[int, int]{}, err
 	}
 	totalResult, err = strconv.Atoi(regexp.MustCompile(`\\d+`).FindString(res))
 	if err != nil {
-		log.Error().Err(err).Msg("Error converting total result to integer")
+		e.Err(err).Msg("Error converting total result to integer")
 		return lo.Tuple2[int, int]{}, err
 	}
 
-	log.Info().Msg("Searching for page number elements")
+	l.Msg("Searching for page number elements")
 	elements, err := rp.Elements("#listview > div.row.justify-content-end > div > ul > li.page-item.page-link> a")
 	if err != nil {
-		log.Error().Err(err).Msg("Error getting elements")
+		e.Err(err).Msg("Error getting elements")
 		return lo.Tuple2[int, int]{}, err
 	}
 	for _, element := range elements {
@@ -856,20 +870,20 @@ func getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, 
 		}
 		u, err := stdUrl.Parse(*href)
 		if err != nil {
-			log.Error().Err(err).Msg("Error parsing URL")
+			e.Err(err).Msg("Error parsing URL")
 			continue
 		}
 		lp := u.Query().Get("CurrentPage")
 		lpInt, err := strconv.Atoi(lp)
 		if err != nil {
-			log.Error().Err(err).Msg("Error converting LP to integer")
+			e.Err(err).Msg("Error converting LP to integer")
 			continue
 		}
 		if lastPage < lpInt {
 			lastPage = lpInt
 		}
 	}
-	log.Info().Int("lastPage", lastPage).Msg("Finished getting last page")
+	l.Int("lastPage", lastPage).Msg("Finished getting last page")
 
 	return lo.Tuple2[int, int]{
 		A: lastPage,

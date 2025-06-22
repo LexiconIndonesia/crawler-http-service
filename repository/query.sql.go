@@ -58,20 +58,19 @@ func (q *Queries) CountJobs(ctx context.Context, arg CountJobsParams) (int64, er
 
 const createCrawlerLog = `-- name: CreateCrawlerLog :one
 
-INSERT INTO crawler_logs (id, data_source_id, url_frontier_id,  event_type, message, details, created_at, job_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, data_source_id, url_frontier_id, job_id, event_type, message, details, created_at
+INSERT INTO crawler_logs (id, data_source_id,  event_type, message, details, created_at, job_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7)
+RETURNING id, data_source_id, job_id, event_type, message, details, created_at
 `
 
 type CreateCrawlerLogParams struct {
-	ID            string
-	DataSourceID  string
-	UrlFrontierID pgtype.Text
-	EventType     string
-	Message       pgtype.Text
-	Details       []byte
-	CreatedAt     time.Time
-	JobID         pgtype.Text
+	ID           string
+	DataSourceID string
+	EventType    string
+	Message      pgtype.Text
+	Details      []byte
+	CreatedAt    time.Time
+	JobID        pgtype.Text
 }
 
 // =============================================
@@ -82,7 +81,6 @@ func (q *Queries) CreateCrawlerLog(ctx context.Context, arg CreateCrawlerLogPara
 	row := q.db.QueryRow(ctx, createCrawlerLog,
 		arg.ID,
 		arg.DataSourceID,
-		arg.UrlFrontierID,
 		arg.EventType,
 		arg.Message,
 		arg.Details,
@@ -93,7 +91,6 @@ func (q *Queries) CreateCrawlerLog(ctx context.Context, arg CreateCrawlerLogPara
 	err := row.Scan(
 		&i.ID,
 		&i.DataSourceID,
-		&i.UrlFrontierID,
 		&i.JobID,
 		&i.EventType,
 		&i.Message,
@@ -316,7 +313,7 @@ func (q *Queries) GetAllDataSources(ctx context.Context) ([]DataSource, error) {
 }
 
 const getCrawlerLogsByJobId = `-- name: GetCrawlerLogsByJobId :many
-SELECT id, data_source_id, url_frontier_id, job_id, event_type, message, details, created_at FROM crawler_logs WHERE job_id = $1 ORDER BY created_at DESC
+SELECT id, data_source_id, job_id, event_type, message, details, created_at FROM crawler_logs WHERE job_id = $1 ORDER BY created_at DESC
 `
 
 // Get crawler logs by job ID
@@ -332,7 +329,6 @@ func (q *Queries) GetCrawlerLogsByJobId(ctx context.Context, jobID pgtype.Text) 
 		if err := rows.Scan(
 			&i.ID,
 			&i.DataSourceID,
-			&i.UrlFrontierID,
 			&i.JobID,
 			&i.EventType,
 			&i.Message,

@@ -233,7 +233,7 @@ INSERT INTO extraction_versions (
 
 -- Create a new crawler log entry
 -- name: CreateCrawlerLog :one
-INSERT INTO crawler_logs (id, data_source_id,  event_type, message, details, created_at, job_id)
+INSERT INTO crawler_logs (id, data_source_id, job_id, event_type, message, details, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING *;
 

@@ -105,13 +105,12 @@ func (s *AppHttpServer) setupRoute() {
 		scraperHandler := handler.NewScraperHandler(s.db, s.natsClient, s.cfg)
 		dataSourceHandler := handler.NewDataSourceHandler(s.db)
 		workManagerHandler := handler.NewWorkManagerHandler(s.db, s.cfg)
-		healthHandler := handler.NewHealthHandler(s.db)
 
 		r.Mount("/crawlers", crawlerHandler.Router())
 		r.Mount("/scrapers", scraperHandler.Router())
 		r.Mount("/datasources", dataSourceHandler.Router())
 		r.Mount("/works", workManagerHandler.Router())
-		r.Mount("/health", healthHandler.Router())
+
 	})
 }
 

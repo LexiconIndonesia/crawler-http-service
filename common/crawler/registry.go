@@ -113,17 +113,18 @@ func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 				}
 
 				for msg := range batch.Messages() {
-					err := c.Consume(ctx, msg.Data())
+					log.Info().Str("crawler_name", name).Msg("Consuming message")
+					err := msg.Ack()
+					if err != nil {
+						log.Error().Err(err).Str("crawler_name", name).Msg("Failed to acknowledge message")
+					}
+					log.Info().Str("crawler_name", name).Msg("Acknowledged message")
+					err = c.Consume(ctx, msg.Data())
 					if err != nil {
 						log.Error().Err(err).Str("crawler_name", name).Msg("Failed to consume message")
-						if err := msg.Nak(); err != nil {
-							log.Error().Err(err).Str("crawler_name", name).Msg("Failed to NAK message")
-						}
-					} else {
-						if err := msg.Ack(); err != nil {
-							log.Error().Err(err).Str("crawler_name", name).Msg("Failed to ACK message")
-						}
+
 					}
+
 				}
 				if batch.Error() != nil {
 					log.Error().Err(batch.Error()).Str("crawler_name", name).Msg("Error during message batch processing")

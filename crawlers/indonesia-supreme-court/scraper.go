@@ -120,7 +120,7 @@ func (t *scrapeTask) Timeout() time.Duration { return 0 }
 
 // ScrapeAll scrapes all pending URLs for Singapore Supreme Court
 func (s *IndonesiaSupremeCourtScraper) ScrapeAll(ctx context.Context, jobID string) error {
-	log.Info().Str("jobID", jobID).Msg("Starting ScrapeAll for Indonesia Supreme Court")
+	log.Info().Str("dataSourceID", s.BaseScraper.Config.DataSource.ID).Str("jobID", jobID).Msg("Starting ScrapeAll for Indonesia Supreme Court")
 
 	// Derive cancellable context so we can propagate cancellations to the pool
 	ctx, cancel := context.WithCancel(ctx)
@@ -237,7 +237,7 @@ func (s *IndonesiaSupremeCourtScraper) ScrapeAll(ctx context.Context, jobID stri
 
 // ScrapeByURLFrontierID scrapes a specific URL frontier by ID
 func (s *IndonesiaSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context, id string, jobID string) error {
-	log.Info().Str("id", id).Str("jobID", jobID).Msg("Starting ScrapeByURLFrontierID for Indonesia Supreme Court")
+	log.Info().Str("dataSourceID", s.BaseScraper.Config.DataSource.ID).Str("id", id).Str("jobID", jobID).Msg("Starting ScrapeByURLFrontierID for Indonesia Supreme Court")
 
 	// 1. Fetch the URL frontier
 	frontier, err := s.UrlFrontierRepo.GetByID(ctx, id)
