@@ -3,6 +3,7 @@ package work
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -98,32 +99,37 @@ func NewWorkerPool[T any](numWorkers int, taskChannelSize int) (*Pool[T], error)
 
 // NewWorkerPoolWithConfig creates a new enhanced worker pool with custom configuration
 func NewWorkerPoolWithConfig[T any](config PoolConfig) (*Pool[T], error) {
-	if config.NumWorkers <= 0 {
-		return nil, ErrInvalidWorkerCount
+	conf := DefaultPoolConfig()
+	if config.NumWorkers >= 0 {
+		conf.NumWorkers = config.NumWorkers
 	}
 
-	if config.TaskChannelSize < 0 {
-		return nil, ErrInvalidChannelSize
+	if config.TaskChannelSize >= 0 {
+		conf.TaskChannelSize = config.TaskChannelSize
 	}
 
-	if config.ResultChanSize < 0 {
-		config.ResultChanSize = config.NumWorkers * 2 // Reasonable default
+	if config.ResultChanSize >= 0 {
+		conf.ResultChanSize = config.ResultChanSize
 	}
 
-	if config.TaskTimeout <= 0 {
-		config.TaskTimeout = 30 * time.Second
+	if config.TaskTimeout >= 0 {
+		conf.TaskTimeout = config.TaskTimeout
 	}
 
-	if config.ShutdownTimeout <= 0 {
-		config.ShutdownTimeout = 10 * time.Second
+	if config.ShutdownTimeout >= 0 {
+		conf.ShutdownTimeout = config.ShutdownTimeout
+	}
+
+	if config.WorkManager != nil {
+		conf.WorkManager = config.WorkManager
 	}
 
 	return &Pool[T]{
-		config:      config,
+		config:      conf,
 		tasks:       make(chan Executor[T], config.TaskChannelSize),
 		results:     make(chan TaskResult[T], config.ResultChanSize),
 		quit:        make(chan struct{}),
-		workManager: config.WorkManager,
+		workManager: conf.WorkManager,
 	}, nil
 }
 
@@ -315,6 +321,45 @@ func (p *Pool[T]) startWorkers(ctx context.Context, poolID string) {
 
 // executeTask executes a single task with proper error handling and timeout
 func (p *Pool[T]) executeTask(ctx context.Context, task Executor[T], workerID int, poolID string) {
+	// Add panic recovery to keep the pool stable even if a task panics.
+	defer func(start time.Time) {
+		if r := recover(); r != nil {
+			var zero T
+			err, ok := r.(error)
+			if !ok {
+				err = fmt.Errorf("%v", r)
+			}
+			// Log the panic with stack trace for easier debugging
+			log.Error().Err(err).
+				Str("workerPoolID", poolID).
+				Int("workerID", workerID).
+				Str("taskID", task.ExecutorID()).
+				Msg("Task panicked during execution")
+
+			// Notify task of the error
+			task.OnError(err)
+
+			// Prepare task result indicating failure
+			taskResult := TaskResult[T]{
+				TaskID:    task.ExecutorID(),
+				Result:    zero,
+				Error:     err,
+				StartTime: start,
+				EndTime:   time.Now(),
+				Duration:  time.Since(start),
+			}
+
+			// Attempt to send the result without blocking indefinitely
+			select {
+			case p.results <- taskResult:
+			case <-time.After(1 * time.Second):
+				log.Warn().Str("taskID", task.ExecutorID()).Msg("Result channel full after panic, dropping result")
+			}
+
+			atomic.AddInt64(&p.tasksCompleted, 1)
+		}
+	}(time.Now())
+
 	taskID := task.ExecutorID()
 
 	if p.workManager != nil {

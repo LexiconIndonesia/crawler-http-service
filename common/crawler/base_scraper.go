@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -16,6 +17,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
+	"github.com/jackc/pgx/v5"
 	"github.com/rs/zerolog/log"
 )
 
@@ -72,6 +74,14 @@ func (s *BaseScraper) UpdateUrlFrontierStatus(ctx context.Context, id []string, 
 		return fmt.Errorf("url frontier repository not initialized")
 	}
 
+	// If the original context is already cancelled (e.g., due to task timeout),
+	// use a fresh background context so that we can still persist the status
+	// change to the database. We don't want to lose this information just
+	// because the scrape operation itself timed out.
+	if ctx.Err() != nil {
+		ctx = context.Background()
+	}
+
 	err := s.UrlFrontierRepo.UpdateStatusBatch(ctx, id, status, errorMessage)
 	if err != nil {
 		log.Error().Err(err).Str("id", strings.Join(id, ",")).Msg("Failed to update url frontier status")
@@ -97,6 +107,48 @@ func (s *BaseScraper) SaveExtraction(ctx context.Context, extraction repository.
 		extraction.ExtractionDate = time.Now()
 	}
 
+	// Try to fetch the existing extraction (if any)
+	existing, err := s.ExtractionRepo.GetByID(ctx, extraction.ID)
+	if err != nil && err != pgx.ErrNoRows {
+		// Unexpected DB error
+		log.Error().Err(err).Str("id", extraction.ID).Msg("Failed to query existing extraction")
+		return repository.Extraction{}, err
+	}
+
+	// If an existing record is found, decide whether we need to create a new version
+	if err == nil { // existing extraction found
+		var prevHash, newHash string
+		if existing.PageHash.Valid {
+			prevHash = existing.PageHash.String
+		}
+		if extraction.PageHash.Valid {
+			newHash = extraction.PageHash.String
+		}
+
+		// Only version when the page hash has changed (implying the underlying content changed)
+		if prevHash != newHash {
+			// Unmarshal previous metadata for version record (best-effort)
+			var metaMap map[string]interface{}
+			if len(existing.Metadata) > 0 {
+				_ = json.Unmarshal(existing.Metadata, &metaMap)
+			}
+
+			versionNumber := int(existing.Version)
+			if versionNumber == 0 {
+				versionNumber = 1
+			}
+
+			if verr := s.ExtractionRepo.CreateVersion(ctx, existing.ID, versionNumber, existing.SiteContent.String, metaMap, prevHash); verr != nil {
+				log.Error().Err(verr).Str("id", existing.ID).Msg("Failed to create extraction version – proceeding with upsert")
+			}
+		} else {
+			// No content change; skip saving to avoid unnecessary overwrite
+			log.Debug().Str("id", extraction.ID).Msg("No changes detected in extraction – skipping save")
+			return existing, nil
+		}
+	}
+
+	// Persist (upsert) the new/updated extraction
 	savedExtraction, err := s.ExtractionRepo.Create(ctx, extraction)
 	if err != nil {
 		log.Error().Err(err).Str("url_frontier_id", extraction.UrlFrontierID).Msg("Failed to save extraction")
@@ -182,7 +234,7 @@ func (s *BaseScraper) HandlePdf(ctx context.Context, extractionID string, pdfURL
 
 	sanitizedTitle := sanitizeTitleForFileName(title)
 	fileName := fmt.Sprintf("%s_%s.pdf", extractionID, sanitizedTitle)
-	objectName := fmt.Sprintf("%s/%s", s.Config.DataSource.Name, fileName)
+	objectName := fmt.Sprintf("%s/pdf/%s", s.Config.DataSource.Name, fileName)
 	gcsURL, err := s.UploadFileToStorage(ctx, objectName, body, "application/pdf")
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload PDF to storage")
@@ -231,7 +283,7 @@ func (s *BaseScraper) HandleHtml(ctx context.Context, extractionID string, htmlU
 
 	sanitizedTitle := sanitizeTitleForFileName(title)
 	fileName := fmt.Sprintf("%s_%s.html", extractionID, sanitizedTitle)
-	objectName := fmt.Sprintf("%s/%s", s.Config.DataSource.Name, fileName)
+	objectName := fmt.Sprintf("%s/html/%s", s.Config.DataSource.Name, fileName)
 	gcsURL, err := s.UploadFileToStorage(ctx, objectName, body, "text/html")
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to upload HTML to storage")

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -145,10 +146,28 @@ func (s *IndonesiaSupremeCourtScraper) ScrapeAll(ctx context.Context, jobID stri
 		numWorkers = 10
 	}
 
+	// Start the job in work manager for overall scrape session tracking
+	if err := s.workManager.Start(ctx, jobID); err != nil {
+		if strings.Contains(err.Error(), "already running") {
+			log.Warn().Str("jobID", jobID).Msg("Scrape job already running – ignoring duplicate message")
+			return nil
+		}
+		log.Error().Err(err).Str("dataSourceID", s.BaseScraper.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to start work in manager")
+		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
+	}
+
+	// Ensure we mark completion when exiting the function
+	defer func() {
+		if err := s.workManager.Complete(ctx, jobID); err != nil {
+			log.Error().Err(err).Str("dataSourceID", s.BaseScraper.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to complete work in manager")
+		}
+	}()
+
 	poolConfig := work.PoolConfig{
 		NumWorkers:      numWorkers,
 		TaskChannelSize: numWorkers * 2,
-		WorkManager:     s.workManager,
+		TaskTimeout:     120 * time.Second, // 2-minute timeout per task
+		WorkManager:     nil,               // Don't track individual tasks in WorkManager
 	}
 	workerPool, err := work.NewWorkerPoolWithConfig[repository.Extraction](poolConfig)
 	if err != nil {
@@ -314,10 +333,8 @@ func (s *IndonesiaSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod
 }
 
 func (s *IndonesiaSupremeCourtScraper) scrapeJob(pagePool *rod.Pool[rod.Page], ctx context.Context, urlFrontier repository.UrlFrontier, jobID string) (repository.Extraction, error) {
-	log.Info().Str("url", urlFrontier.Url).Msg("Scraping Indonesia Supreme Court page")
+	log.Info().Str("url", urlFrontier.Url).Msg("Scraping Indonesia Supreme Court page (not yet implemented)")
 
-	// TODO: Implement actual scraping logic here.
-	// For now, we'll just return an empty extraction.
-
-	return repository.Extraction{}, nil
+	// TODO: Implement actual scraping logic, including saving extraction.
+	return repository.Extraction{}, common.ErrNotImplemented
 }

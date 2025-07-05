@@ -9,6 +9,7 @@ import (
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
@@ -85,6 +86,12 @@ func (wm *WorkManager) removeWork(ctx context.Context, workID string) error {
 
 // Complete marks a work as completed by removing its state from Redis.
 func (wm *WorkManager) Complete(ctx context.Context, workID string) error {
+	// If the provided context is already cancelled, fall back to a fresh one so that
+	// we can still perform the cleanup operation in Redis and DB.
+	if ctx.Err() != nil {
+		ctx = context.Background()
+	}
+
 	if err := wm.removeWork(ctx, workID); err != nil {
 		return err
 	}
@@ -158,6 +165,10 @@ func (wm *WorkManager) Resume(ctx context.Context, workID string) (bool, error) 
 // updateJobStatus upserts the job record in the database.
 // It is a no-op when database initialisation failed.
 func (wm *WorkManager) updateJobStatus(ctx context.Context, workID, status string) error {
+	if _, parseErr := uuid.Parse(workID); parseErr != nil {
+		return nil
+	}
+
 	if wm.db == nil || wm.db.Queries == nil {
 		// DB not provided; skip persistence.
 		return nil

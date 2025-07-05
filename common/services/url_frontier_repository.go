@@ -127,7 +127,7 @@ func (r *UrlFrontierRepository) UpdateStatusBatch(ctx context.Context, id []stri
 	}
 
 	params := repository.UpdateUrlFrontierStatusBatchParams{
-		ID:           strings.Join(id, ","),
+		ID:           "{" + strings.Join(id, ",") + "}",
 		Status:       int16(status),
 		ErrorMessage: errMsg,
 		UpdatedAt:    time.Now(),

@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common"
 	"github.com/LexiconIndonesia/crawler-http-service/common/constants"
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
@@ -21,6 +23,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog/log"
 )
@@ -105,10 +108,17 @@ func (t *scrapeTask) Execute(ctx context.Context) (repository.Extraction, error)
 		return repository.Extraction{}, err
 	}
 
-	// Mark as crawled on success (ignore error so we still return success)
+	// Save extraction
+	savedExtraction, err := t.scraper.SaveExtraction(ctx, extraction)
+	if err != nil {
+		_ = t.scraper.UpdateUrlFrontierStatus(ctx, []string{t.frontier.ID}, models.UrlFrontierStatusFailed, err.Error())
+		return repository.Extraction{}, err
+	}
+
+	// Mark as crawled on success
 	_ = t.scraper.UpdateUrlFrontierStatus(ctx, []string{t.frontier.ID}, models.UrlFrontierStatusCrawled, "")
 
-	return extraction, nil
+	return savedExtraction, nil
 }
 
 func (t *scrapeTask) OnError(err error) {
@@ -145,10 +155,30 @@ func (s *SingaporeSupremeCourtScraper) ScrapeAll(ctx context.Context, jobID stri
 		numWorkers = 10
 	}
 
+	// Start the job in work manager so we track the overall scrape session
+	if err := s.workManager.Start(ctx, jobID); err != nil {
+		// If the job is already running, ignore duplicate request
+		if strings.Contains(err.Error(), "already running") {
+			log.Warn().Str("jobID", jobID).Msg("Scrape job already running - ignoring duplicate message")
+			return nil
+		}
+
+		log.Error().Err(err).Str("dataSourceID", s.BaseScraper.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to start work in manager")
+		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
+	}
+
+	// Ensure we mark the job as completed when this function returns
+	defer func() {
+		if err := s.workManager.Complete(ctx, jobID); err != nil {
+			log.Error().Err(err).Str("dataSourceID", s.BaseScraper.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to complete work in manager")
+		}
+	}()
+
 	poolConfig := work.PoolConfig{
 		NumWorkers:      numWorkers,
 		TaskChannelSize: numWorkers * 2,
-		WorkManager:     s.workManager,
+		TaskTimeout:     120 * time.Second, // 2-minute timeout per task
+		WorkManager:     nil,               // Don't track individual tasks in WorkManager
 	}
 	workerPool, err := work.NewWorkerPoolWithConfig[repository.Extraction](poolConfig)
 	if err != nil {
@@ -178,6 +208,16 @@ func (s *SingaporeSupremeCourtScraper) ScrapeAll(ctx context.Context, jobID stri
 	batchNumber := 1
 
 	for {
+		// Check if the job has been cancelled via WorkManager (e.g., from an API request).
+		running, err := s.workManager.IsRunning(ctx, jobID)
+		if err != nil {
+			log.Error().Err(err).Str("jobID", jobID).Msg("Failed to query WorkManager job state")
+		} else if !running {
+			log.Info().Str("jobID", jobID).Msg("Job has been cancelled – terminating ScrapeAll loop")
+			// Cancel the local context so that worker pool and tasks stop gracefully.
+			cancel()
+		}
+
 		select {
 		case <-ctx.Done():
 			log.Info().Msg("Context cancelled, stopping ScrapeAll")
@@ -217,6 +257,13 @@ func (s *SingaporeSupremeCourtScraper) ScrapeAll(ctx context.Context, jobID stri
 				// Mark as failed immediately since task could not be queued
 				_ = s.UpdateUrlFrontierStatus(ctx, []string{frontier.ID}, models.UrlFrontierStatusFailed, err.Error())
 			}
+		}
+
+		// Interlude between batches to respect delay configuration and avoid overwhelming the target site
+		if s.Config.MinDelayMs > 0 && s.Config.MaxDelayMs > 0 {
+			delay := rand.Intn(s.Config.MaxDelayMs-s.Config.MinDelayMs) + s.Config.MinDelayMs
+			log.Debug().Int("ms", delay).Msg("Interlude before fetching next batch")
+			time.Sleep(time.Duration(delay) * time.Millisecond)
 		}
 
 		batchNumber++
@@ -329,7 +376,7 @@ func (s *SingaporeSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod
 	log.Info().Str("dataSourceID", s.BaseScraper.Config.DataSource.ID).Str("jobID", jobID).Str("url", urlFrontier.Url).Msg("Scraping url")
 
 	rpCtx := page.Context(ctx)
-	wait := rpCtx.MustWaitNavigation()
+	wait := rpCtx.WaitNavigation(proto.PageLifecycleEventNameNetworkAlmostIdle)
 	err := rpCtx.Navigate(urlFrontier.Url)
 	if err != nil {
 		log.Error().Err(err).Msg("Error navigating to url")
@@ -337,9 +384,13 @@ func (s *SingaporeSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod
 	}
 	wait()
 
-	rp := rpCtx.MustWaitStable()
+	err = rpCtx.WaitStable(time.Second)
+	if err != nil {
+		log.Error().Err(err).Msg("Error waiting for stable")
+		return repository.Extraction{}, err
+	}
 
-	judgement, err := rp.Element("#divJudgement")
+	judgement, err := rpCtx.Element("#divJudgement")
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting judgement")
 		return repository.Extraction{}, err
@@ -357,7 +408,7 @@ func (s *SingaporeSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod
 		return repository.Extraction{}, err
 	}
 	extraction.SiteContent = pgtype.Text{String: siteContent, Valid: true}
-	nav, err := rp.Element("nav")
+	nav, err := rpCtx.Element("nav")
 	if err != nil {
 		log.Error().Err(err).Msg("Error getting nav")
 		return repository.Extraction{}, err
@@ -420,9 +471,19 @@ func (s *SingaporeSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod
 		return repository.Extraction{}, err
 	}
 
+	// Inject both artifacts into metadata and re-marshal
+	finalMetadata.ExtractionArtifacts = []models.ExtractionArtifact{pdfArtifact, htmlArtifact}
+	if updatedMetaBytes, mErr := json.Marshal(finalMetadata); mErr != nil {
+		log.Error().Err(mErr).Msg("failed to marshal updated metadata with extraction artifacts")
+		return repository.Extraction{}, mErr
+	} else {
+		extraction.Metadata = updatedMetaBytes
+	}
+
 	extraction.ArtifactLink = pgtype.Text{String: pdfArtifact.URL, Valid: true}
 	extraction.RawPageLink = pgtype.Text{String: htmlArtifact.URL, Valid: true}
 	log.Info().Str("dataSourceID", s.BaseScraper.Config.DataSource.ID).Str("jobID", jobID).Str("url", urlFrontier.Url).Msg("Scraped template for url")
+	extraction.ContentType = pgtype.Text{String: string(common.ContentTypeJudgment), Valid: true}
 
 	return extraction, nil
 }

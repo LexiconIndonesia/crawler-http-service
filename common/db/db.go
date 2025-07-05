@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/config"
+
 	"github.com/LexiconIndonesia/crawler-http-service/common/redis"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	zerolog "github.com/jackc/pgx-zerolog"
@@ -66,10 +67,15 @@ func SetupDatabase(ctx context.Context, cfg config.Config) (*DB, error) {
 
 	// Setup logger
 	logger := zerolog.NewLogger(log.Logger)
-	config.ConnConfig.Tracer = &tracelog.TraceLog{
+	defaultTracer := &tracelog.TraceLog{
 		Logger:   logger,
 		LogLevel: tracelog.LogLevelInfo,
 	}
+	filteredTracer := &FilteredTracer{
+		inner:     defaultTracer,
+		skipTable: "crawler_logs",
+	}
+	config.ConnConfig.Tracer = filteredTracer
 
 	pgsqlClient, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

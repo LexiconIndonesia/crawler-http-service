@@ -32,7 +32,7 @@ func DefaultBaseCrawlerConfig() BaseCrawlerConfig {
 		RetryAttempts:  3,
 		RetryDelay:     time.Second * 2,
 		RequestTimeout: time.Second * 30,
-		MaxConcurrency: 10,
+		MaxConcurrency: 1,
 		UserAgent:      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
 	}
 }

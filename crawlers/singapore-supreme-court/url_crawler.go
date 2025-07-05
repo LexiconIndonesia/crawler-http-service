@@ -56,6 +56,18 @@ func (u *urlCrawler) copy() urlCrawler {
 	}
 }
 
+func getSearchPhrase(url string) (string, error) {
+	parsedURL, err := stdUrl.Parse(url)
+	if err != nil {
+		log.Error().Err(err).Msg("Error parsing URL")
+		return "", err
+	}
+
+	queryParams := parsedURL.Query()
+	searchPhrase := queryParams.Get("searchPhrase")
+	return searchPhrase, nil
+}
+
 func newURLCrawler(baseURL string, config crawler.SingaporeSupremeCourtConfig, page int) (urlCrawler, error) {
 	parsedURL, err := stdUrl.Parse(baseURL)
 	if err != nil {

@@ -20,3 +20,10 @@ const (
 	// SingaporeSupremeCourt represents the Singapore Supreme Court crawler
 	SingaporeSupremeCourt CrawlerType = "singapore-supreme-court-crawler"
 )
+
+type ContentType string
+
+const (
+	ContentTypeJudgment   ContentType = "judgment"
+	ContentTypeRegulation ContentType = "regulation"
+)

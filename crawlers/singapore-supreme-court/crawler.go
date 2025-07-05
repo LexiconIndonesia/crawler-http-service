@@ -2,6 +2,8 @@ package ssc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +22,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
+	"github.com/go-rod/rod/lib/proto"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/rs/zerolog/log"
 	"github.com/samber/lo"
@@ -118,13 +121,26 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 
 	// Create type-safe worker pool for crawling tasks (no meaningful return value)
 	poolConfig := work.PoolConfig{
-		NumWorkers:  c.BaseCrawler.Config.MaxConcurrency,
-		WorkManager: c.workManager,
+		NumWorkers:      c.BaseCrawler.Config.MaxConcurrency,
+		TaskChannelSize: c.BaseCrawler.Config.MaxConcurrency * 2,
+		ResultChanSize:  c.BaseCrawler.Config.MaxConcurrency * 2,
+		WorkManager:     nil, // Don't use work manager for individual tasks
 	}
 	workerPool, err := work.NewWorkerPoolWithConfig[[]repository.UrlFrontier](poolConfig)
 	if err != nil {
 		return err
 	}
+
+	// Start the job in work manager
+	if err := c.workManager.Start(ctx, jobID); err != nil {
+		log.Error().Err(err).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to start work in manager")
+		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
+	}
+	defer func() {
+		if err := c.workManager.Complete(ctx, jobID); err != nil {
+			log.Error().Err(err).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to complete work in manager")
+		}
+	}()
 
 	workerPool.Start(ctx, jobID)
 	defer workerPool.Stop()
@@ -180,6 +196,16 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 	}()
 
 	for _, url := range urlList {
+		// Before processing each URL, verify that the job is still marked as running.
+		running, err := c.workManager.IsRunning(ctx, jobID)
+		if err != nil {
+			log.Error().Err(err).Str("jobID", jobID).Msg("Failed to query WorkManager job state")
+		} else if !running {
+			log.Info().Str("jobID", jobID).Msg("Job has been cancelled – stopping CrawlAll URL loop")
+			cancel()
+			break
+		}
+
 		// Capture url in closure
 		crawlURL := url
 
@@ -187,7 +213,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 		taskID := fmt.Sprintf("singapore-supreme-court-crawler-page-%d", url.currentPage)
 
 		// Create a simple task using the helper function
-		task, err := work.NewTask[[]repository.UrlFrontier](
+		task, err := work.NewTask(
 			func(ctx context.Context) ([]repository.UrlFrontier, error) {
 				// Check context before starting work
 				select {
@@ -199,7 +225,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlAll(ctx context.Context, jobID strin
 						log.Debug().Int("ms", delay).Msg("Delaying request")
 						time.Sleep(time.Duration(delay) * time.Millisecond)
 					}
-					return c.crawlingJob(&pagePool, ctx, crawlURL.constructURL())
+					return c.crawlingJob(&pagePool, ctx, crawlURL)
 				}
 			},
 			work.WithID[[]repository.UrlFrontier](taskID),
@@ -276,13 +302,9 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 
 	l.Msgf("Start Crawling by keyword dataSourceID=%s", c.BaseCrawler.Config.DataSource.ID)
 
-	// Update the work manager to signal that the work has started
-	// The jobID is used as the workID
-	if err := c.workManager.Start(ctx, jobID); err != nil {
-		log.Error().Err(err).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to start work in manager")
-		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
-	}
-	l.Msg("Work manager started for job")
+	// Note: The work manager start is initiated later, just before the worker pool
+	// begins processing tasks. This avoids duplicate start calls that can
+	// trigger the "work is already running" error.
 
 	// Validate keyword
 	if keyword == "" {
@@ -330,13 +352,25 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 
 	// Create type-safe worker pool for crawling tasks
 	poolConfig := work.PoolConfig{
-		NumWorkers:  c.BaseCrawler.Config.MaxConcurrency,
-		WorkManager: c.workManager,
+		NumWorkers: c.BaseCrawler.Config.MaxConcurrency,
+
+		WorkManager: nil,
 	}
 	workerPool, err := work.NewWorkerPoolWithConfig[[]repository.UrlFrontier](poolConfig)
 	if err != nil {
 		return err
 	}
+
+	// Start the job in work manager
+	if err := c.workManager.Start(ctx, jobID); err != nil {
+		log.Error().Err(err).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to start work in manager")
+		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
+	}
+	defer func() {
+		if err := c.workManager.Complete(ctx, jobID); err != nil {
+			log.Error().Err(err).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to complete work in manager")
+		}
+	}()
 
 	workerPool.Start(ctx, jobID)
 	defer workerPool.Stop()
@@ -394,6 +428,16 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 	}()
 
 	for _, url := range urlList {
+		// Before processing each URL, verify that the job is still marked as running.
+		running, err := c.workManager.IsRunning(ctx, jobID)
+		if err != nil {
+			log.Error().Err(err).Str("jobID", jobID).Msg("Failed to query WorkManager job state")
+		} else if !running {
+			log.Info().Str("jobID", jobID).Msg("Job has been cancelled – stopping CrawlByKeyword URL loop")
+			cancel()
+			break
+		}
+
 		// Capture url in closure
 		crawlURL := url
 
@@ -401,7 +445,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 		taskID := fmt.Sprintf("singapore-supreme-court-keyword-crawler-page-%d-keyword-%s", url.currentPage, keyword)
 
 		// Create a simple task using the helper function
-		task, err := work.NewTask[[]repository.UrlFrontier](
+		task, err := work.NewTask(
 			func(ctx context.Context) ([]repository.UrlFrontier, error) {
 				// Check context before starting work
 				select {
@@ -413,7 +457,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 						log.Debug().Int("ms", delay).Msg("Delaying request")
 						time.Sleep(time.Duration(delay) * time.Millisecond)
 					}
-					return c.crawlingJob(&pagePool, ctx, crawlURL.constructURL())
+					return c.crawlingJob(&pagePool, ctx, crawlURL)
 				}
 			},
 			work.WithID[[]repository.UrlFrontier](taskID),
@@ -481,7 +525,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByKeyword(ctx context.Context, keywo
 }
 
 // CrawlByURL crawls a specific URL
-func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url, jobID string) error {
+func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url string, jobID string) error {
 	l := log.Info().
 		Str("url", url).
 		Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).
@@ -509,12 +553,23 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url, jobI
 	// Create type-safe worker pool for single URL crawling task
 	poolConfig := work.PoolConfig{
 		NumWorkers:  1,
-		WorkManager: c.workManager,
+		WorkManager: nil,
 	}
 	workerPool, err := work.NewWorkerPoolWithConfig[[]repository.UrlFrontier](poolConfig)
 	if err != nil {
 		return err
 	}
+
+	// Start the job in work manager
+	if err := c.workManager.Start(ctx, jobID); err != nil {
+		log.Error().Err(err).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to start work in manager")
+		return fmt.Errorf("failed to start work manager for job %s: %w", jobID, err)
+	}
+	defer func() {
+		if err := c.workManager.Complete(ctx, jobID); err != nil {
+			log.Error().Err(err).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Str("jobID", jobID).Msg("Failed to complete work in manager")
+		}
+	}()
 
 	workerPool.Start(ctx, jobID)
 	defer workerPool.Stop()
@@ -569,10 +624,25 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url, jobI
 	}()
 
 	// Create a task ID for the single URL
-	taskID := fmt.Sprintf("singapore-supreme-court-single-url-crawler-%s", c.BaseCrawler.GenerateID(url))
+	// Before we proceed, confirm the job has not been cancelled.
+	running, err := c.workManager.IsRunning(ctx, jobID)
+	if err != nil {
+		log.Error().Err(err).Str("jobID", jobID).Msg("Failed to query WorkManager job state")
+	} else if !running {
+		log.Info().Str("jobID", jobID).Msg("Job has been cancelled – aborting CrawlByURL")
+		cancel()
+		return ctx.Err()
+	}
+
+	taskID := fmt.Sprintf("singapore-supreme-court-single-url-crawler-%s", url)
+
+	urlCrawler, err := newStartURLCrawler(c.BaseCrawler.Config, c.Config)
+	if err != nil {
+		return err
+	}
 
 	// Create a simple task using the helper function
-	task, err := work.NewTask[[]repository.UrlFrontier](
+	task, err := work.NewTask(
 		func(ctx context.Context) ([]repository.UrlFrontier, error) {
 			// Check context before starting work
 			select {
@@ -584,7 +654,7 @@ func (c *SingaporeSupremeCourtCrawler) CrawlByURL(ctx context.Context, url, jobI
 					log.Debug().Int("ms", delay).Msg("Delaying request")
 					time.Sleep(time.Duration(delay) * time.Millisecond)
 				}
-				return c.crawlingJob(&pagePool, ctx, url)
+				return c.crawlingJob(&pagePool, ctx, urlCrawler)
 			}
 		},
 		work.WithID[[]repository.UrlFrontier](taskID),
@@ -691,7 +761,13 @@ func (c *SingaporeSupremeCourtCrawler) ExtractElements(ctx context.Context, elem
 		metadataBytes = []byte{}
 	}
 
+	detailUrl := fmt.Sprintf("%s%s", c.BaseCrawler.Config.DataSource.BaseUrl.String, *link)
+
+	id := sha256.Sum256([]byte(detailUrl))
+	idString := hex.EncodeToString(id[:])
+
 	detailUrls := repository.UrlFrontier{
+		ID:           idString,
 		DataSourceID: c.BaseCrawler.Config.DataSource.ID,
 		Domain:       c.BaseCrawler.Config.DataSource.BaseUrl.String,
 		Keyword:      pgtype.Text{String: "", Valid: true},
@@ -704,7 +780,7 @@ func (c *SingaporeSupremeCourtCrawler) ExtractElements(ctx context.Context, elem
 
 func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.Page, url string) ([]repository.UrlFrontier, error) {
 	l := log.Info().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
-	e := log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
+
 	l.Msgf("Navigating to E-Litigation URL dataSourceName=%s", c.BaseCrawler.Config.DataSource.Name)
 	l.Msgf("Crawling URL: %s", url)
 
@@ -717,26 +793,24 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 	}
 
 	rpCtx := page.Context(ctx)
-	wait := rpCtx.MustWaitNavigation()
+	wait := rpCtx.WaitNavigation(proto.PageLifecycleEventNameNetworkAlmostIdle)
 	err := rpCtx.Navigate(url)
+
 	if err != nil {
-		e.Err(err).Msg("Error navigating to url")
+		log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error navigating to url")
 		return res, err
 	}
 	wait()
 
-	// Check context after navigation
-	select {
-	case <-ctx.Done():
-		return res, ctx.Err()
-	default:
+	err = rpCtx.WaitStable(time.Second)
+	if err != nil {
+		log.Error().Err(err).Msg("Error waiting for stable")
+		return res, err
 	}
 
-	page = rpCtx.MustWaitStable()
-
-	elements, err := page.Elements("#listview > div.row > div.card.col-12")
+	elements, err := rpCtx.Elements("#listview > div.row > div.card.col-12")
 	if err != nil {
-		e.Err(err).Msg("Error getting elements")
+		log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error getting elements")
 		return res, err
 	}
 
@@ -754,18 +828,22 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 
 		crawlerResult, err := c.ExtractElements(ctx, element)
 		if err != nil {
-			e.Err(err).Msg("Error extracting elements")
+			log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error extracting elements")
 			continue
 		}
+		searchPhrase, err := getSearchPhrase(url)
+		if err != nil {
+			log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error creating url crawler")
+			continue
+		}
+		crawlerResult.Keyword = pgtype.Text{String: searchPhrase, Valid: true}
 
 		// Only process if we actually got a valid result
 		if crawlerResult.Url != "" {
 			processedCount++
 			l.Str("url", crawlerResult.Url).Msg("Crawler result")
-
-			// Here you would typically save the URL frontier or process it further
-			// For example: c.SaveUrlFrontier(ctx, crawlerResult)
 		}
+		res = append(res, crawlerResult)
 	}
 
 	l.
@@ -779,10 +857,10 @@ func (c *SingaporeSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 // Consume processes a message from a queue
 func (c *SingaporeSupremeCourtCrawler) Consume(ctx context.Context, message []byte) error {
 	l := log.Info().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
-	e := log.Error().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
+
 	var msg messaging.CrawlRequest
 	if err := json.Unmarshal(message, &msg); err != nil {
-		e.Err(err).Msg("Failed to unmarshal crawl request")
+		log.Error().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Failed to unmarshal crawl request")
 		return err
 	}
 
@@ -811,7 +889,7 @@ func (c *SingaporeSupremeCourtCrawler) createPage() (*rod.Page, error) {
 	return incognito.MustPage(), nil
 }
 
-func (c *SingaporeSupremeCourtCrawler) crawlingJob(pagePool *rod.Pool[rod.Page], ctx context.Context, urlPage string) ([]repository.UrlFrontier, error) {
+func (c *SingaporeSupremeCourtCrawler) crawlingJob(pagePool *rod.Pool[rod.Page], ctx context.Context, urlPage urlCrawler) ([]repository.UrlFrontier, error) {
 	result := []repository.UrlFrontier{}
 	page, err := pagePool.Get(c.createPage)
 	if err != nil {
@@ -819,20 +897,20 @@ func (c *SingaporeSupremeCourtCrawler) crawlingJob(pagePool *rod.Pool[rod.Page],
 		return result, err
 	}
 	defer pagePool.Put(page)
-	return c.CrawlPage(ctx, page, urlPage)
+	return c.CrawlPage(ctx, page, urlPage.constructURL())
 }
 
 func (c *SingaporeSupremeCourtCrawler) getLastPage(ctx context.Context, rp *rod.Page, url string) (lo.Tuple2[int, int], error) {
 	lastPage := 0
 
 	l := log.Info().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
-	e := log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
 	l.Msg("Getting last page")
+
 	if err := rp.Context(ctx).Navigate(url); err != nil {
 		if err == context.Canceled {
 			return lo.Tuple2[int, int]{}, err
 		}
-		e.Err(err).Msg("Error navigating to url")
+		log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error navigating to url")
 		return lo.Tuple2[int, int]{}, err
 	}
 	l.Msg("Navigation completed")
@@ -845,19 +923,19 @@ func (c *SingaporeSupremeCourtCrawler) getLastPage(ctx context.Context, rp *rod.
 	l.Msg("Found total result element")
 	res, err := totalResultElement.HTML()
 	if err != nil {
-		e.Err(err).Msg("Error getting total result element")
+		log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error getting total result element")
 		return lo.Tuple2[int, int]{}, err
 	}
-	totalResult, err = strconv.Atoi(regexp.MustCompile(`\\d+`).FindString(res))
+	totalResult, err = strconv.Atoi(regexp.MustCompile(`\d+`).FindString(res))
 	if err != nil {
-		e.Err(err).Msg("Error converting total result to integer")
+		log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error converting total result to integer")
 		return lo.Tuple2[int, int]{}, err
 	}
 
 	l.Msg("Searching for page number elements")
 	elements, err := rp.Elements("#listview > div.row.justify-content-end > div > ul > li.page-item.page-link> a")
 	if err != nil {
-		e.Err(err).Msg("Error getting elements")
+		log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error getting elements")
 		return lo.Tuple2[int, int]{}, err
 	}
 	for _, element := range elements {
@@ -870,13 +948,13 @@ func (c *SingaporeSupremeCourtCrawler) getLastPage(ctx context.Context, rp *rod.
 		}
 		u, err := stdUrl.Parse(*href)
 		if err != nil {
-			e.Err(err).Msg("Error parsing URL")
+			log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error parsing URL")
 			continue
 		}
 		lp := u.Query().Get("CurrentPage")
 		lpInt, err := strconv.Atoi(lp)
 		if err != nil {
-			e.Err(err).Msg("Error converting LP to integer")
+			log.Error().Str("url", url).Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Error converting LP to integer")
 			continue
 		}
 		if lastPage < lpInt {
