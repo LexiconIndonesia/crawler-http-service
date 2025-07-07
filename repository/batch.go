@@ -44,19 +44,19 @@ type UpsertExtractionBatchResults struct {
 }
 
 type UpsertExtractionParams struct {
-	ID             string
-	UrlFrontierID  string
-	SiteContent    pgtype.Text
-	ArtifactLink   pgtype.Text
-	RawPageLink    pgtype.Text
-	ExtractionDate time.Time
-	ContentType    pgtype.Text
-	Metadata       []byte
-	Language       string
-	PageHash       pgtype.Text
-	Version        int32
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID             string      `json:"id"`
+	UrlFrontierID  string      `json:"url_frontier_id"`
+	SiteContent    pgtype.Text `json:"site_content"`
+	ArtifactLink   pgtype.Text `json:"artifact_link"`
+	RawPageLink    pgtype.Text `json:"raw_page_link"`
+	ExtractionDate time.Time   `json:"extraction_date"`
+	ContentType    pgtype.Text `json:"content_type"`
+	Metadata       []byte      `json:"metadata"`
+	Language       string      `json:"language"`
+	PageHash       pgtype.Text `json:"page_hash"`
+	Version        int32       `json:"version"`
+	CreatedAt      time.Time   `json:"created_at"`
+	UpdatedAt      time.Time   `json:"updated_at"`
 }
 
 // =============================================
@@ -132,20 +132,20 @@ type UpsertUrlFrontiersBatchResults struct {
 }
 
 type UpsertUrlFrontiersParams struct {
-	ID            string
-	DataSourceID  string
-	Domain        string
-	Url           string
-	Keyword       pgtype.Text
-	Priority      int16
-	Status        int16
-	Attempts      int16
-	LastCrawledAt pgtype.Timestamptz
-	NextCrawlAt   pgtype.Timestamptz
-	ErrorMessage  pgtype.Text
-	Metadata      []byte
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID            string             `json:"id"`
+	DataSourceID  string             `json:"data_source_id"`
+	Domain        string             `json:"domain"`
+	Url           string             `json:"url"`
+	Keyword       pgtype.Text        `json:"keyword"`
+	Priority      int16              `json:"priority"`
+	Status        int16              `json:"status"`
+	Attempts      int16              `json:"attempts"`
+	LastCrawledAt pgtype.Timestamptz `json:"last_crawled_at"`
+	NextCrawlAt   pgtype.Timestamptz `json:"next_crawl_at"`
+	ErrorMessage  pgtype.Text        `json:"error_message"`
+	Metadata      []byte             `json:"metadata"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 }
 
 // Upsert multiple URL frontier records in batch

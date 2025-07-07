@@ -23,8 +23,8 @@ AND deleted_at IS NULL
 `
 
 type CountDataSourcesParams struct {
-	DataSource pgtype.Text
-	Search     pgtype.Text
+	DataSource pgtype.Text `json:"data_source"`
+	Search     pgtype.Text `json:"search"`
 }
 
 func (q *Queries) CountDataSources(ctx context.Context, arg CountDataSourcesParams) (int64, error) {
@@ -44,8 +44,8 @@ AND
 `
 
 type CountJobsParams struct {
-	Status pgtype.Text
-	Search pgtype.Text
+	Status pgtype.Text `json:"status"`
+	Search pgtype.Text `json:"search"`
 }
 
 // Count jobs with filtering
@@ -58,19 +58,19 @@ func (q *Queries) CountJobs(ctx context.Context, arg CountJobsParams) (int64, er
 
 const createCrawlerLog = `-- name: CreateCrawlerLog :one
 
-INSERT INTO crawler_logs (id, data_source_id,  event_type, message, details, created_at, job_id)
+INSERT INTO crawler_logs (id, data_source_id, job_id, event_type, message, details, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
 RETURNING id, data_source_id, job_id, event_type, message, details, created_at
 `
 
 type CreateCrawlerLogParams struct {
-	ID           string
-	DataSourceID string
-	EventType    string
-	Message      pgtype.Text
-	Details      []byte
-	CreatedAt    time.Time
-	JobID        pgtype.Text
+	ID           string      `json:"id"`
+	DataSourceID string      `json:"data_source_id"`
+	JobID        pgtype.Text `json:"job_id"`
+	EventType    string      `json:"event_type"`
+	Message      pgtype.Text `json:"message"`
+	Details      []byte      `json:"details"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
 // =============================================
@@ -81,11 +81,11 @@ func (q *Queries) CreateCrawlerLog(ctx context.Context, arg CreateCrawlerLogPara
 	row := q.db.QueryRow(ctx, createCrawlerLog,
 		arg.ID,
 		arg.DataSourceID,
+		arg.JobID,
 		arg.EventType,
 		arg.Message,
 		arg.Details,
 		arg.CreatedAt,
-		arg.JobID,
 	)
 	var i CrawlerLog
 	err := row.Scan(
@@ -107,16 +107,16 @@ RETURNING id, name, country, source_type, base_url, description, config, is_acti
 `
 
 type CreateDataSourceParams struct {
-	ID          string
-	Name        string
-	Country     string
-	SourceType  string
-	BaseUrl     pgtype.Text
-	Description pgtype.Text
-	Config      []byte
-	IsActive    bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Country     string      `json:"country"`
+	SourceType  string      `json:"source_type"`
+	BaseUrl     pgtype.Text `json:"base_url"`
+	Description pgtype.Text `json:"description"`
+	Config      []byte      `json:"config"`
+	IsActive    bool        `json:"is_active"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
 // Create a new data source
@@ -161,15 +161,15 @@ INSERT INTO extraction_versions (
 `
 
 type CreateExtractionVersionParams struct {
-	ID           string
-	ExtractionID string
-	SiteContent  pgtype.Text
-	ArtifactLink pgtype.Text
-	RawPageLink  pgtype.Text
-	Metadata     []byte
-	PageHash     pgtype.Text
-	Version      int32
-	CreatedAt    time.Time
+	ID           string      `json:"id"`
+	ExtractionID string      `json:"extraction_id"`
+	SiteContent  pgtype.Text `json:"site_content"`
+	ArtifactLink pgtype.Text `json:"artifact_link"`
+	RawPageLink  pgtype.Text `json:"raw_page_link"`
+	Metadata     []byte      `json:"metadata"`
+	PageHash     pgtype.Text `json:"page_hash"`
+	Version      int32       `json:"version"`
+	CreatedAt    time.Time   `json:"created_at"`
 }
 
 // =============================================
@@ -202,8 +202,8 @@ INSERT INTO jobs (
 `
 
 type CreateJobParams struct {
-	ID     string
-	Status string
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 // =============================================
@@ -510,9 +510,9 @@ ORDER BY priority DESC, created_at ASC LIMIT $3
 `
 
 type GetUnscrappedUrlFrontiersParams struct {
-	DataSourceID string
-	Status       int16
-	Limit        int32
+	DataSourceID string `json:"data_source_id"`
+	Status       int16  `json:"status"`
+	Limit        int32  `json:"limit"`
 }
 
 // Get unscrapped URL frontiers for a data source
@@ -626,10 +626,10 @@ OFFSET $3
 `
 
 type ListDataSourcesParams struct {
-	DataSource pgtype.Text
-	Search     pgtype.Text
-	Offset     int32
-	Limit      int32
+	DataSource pgtype.Text `json:"data_source"`
+	Search     pgtype.Text `json:"search"`
+	Offset     int32       `json:"offset"`
+	Limit      int32       `json:"limit"`
 }
 
 func (q *Queries) ListDataSources(ctx context.Context, arg ListDataSourcesParams) ([]DataSource, error) {
@@ -682,10 +682,10 @@ OFFSET $3
 `
 
 type ListJobsParams struct {
-	Status pgtype.Text
-	Search pgtype.Text
-	Offset int32
-	Limit  int32
+	Status pgtype.Text `json:"status"`
+	Search pgtype.Text `json:"search"`
+	Offset int32       `json:"offset"`
+	Limit  int32       `json:"limit"`
 }
 
 // List jobs with pagination and filtering
@@ -737,15 +737,15 @@ RETURNING id, name, country, source_type, base_url, description, config, is_acti
 `
 
 type UpdateDataSourceParams struct {
-	ID          string
-	Name        string
-	Country     string
-	SourceType  string
-	BaseUrl     pgtype.Text
-	Description pgtype.Text
-	Config      []byte
-	IsActive    bool
-	UpdatedAt   time.Time
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Country     string      `json:"country"`
+	SourceType  string      `json:"source_type"`
+	BaseUrl     pgtype.Text `json:"base_url"`
+	Description pgtype.Text `json:"description"`
+	Config      []byte      `json:"config"`
+	IsActive    bool        `json:"is_active"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
 // Update an existing data source
@@ -788,8 +788,8 @@ RETURNING id, status, created_at, updated_at, started_at, finished_at
 `
 
 type UpdateJobStatusParams struct {
-	ID     string
-	Status string
+	ID     string `json:"id"`
+	Status string `json:"status"`
 }
 
 // Update job status and updated_at timestamp
@@ -819,10 +819,10 @@ WHERE id = $1
 `
 
 type UpdateUrlFrontierStatusParams struct {
-	ID           string
-	Status       int16
-	ErrorMessage pgtype.Text
-	UpdatedAt    time.Time
+	ID           string      `json:"id"`
+	Status       int16       `json:"status"`
+	ErrorMessage pgtype.Text `json:"error_message"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 // Update status and increment attempts for URL frontiers
@@ -848,10 +848,10 @@ WHERE id = ANY($1)
 `
 
 type UpdateUrlFrontierStatusBatchParams struct {
-	ID           string
-	Status       int16
-	ErrorMessage pgtype.Text
-	UpdatedAt    time.Time
+	ID           string      `json:"id"`
+	Status       int16       `json:"status"`
+	ErrorMessage pgtype.Text `json:"error_message"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 // Update Status and increment by batch ids
@@ -881,16 +881,16 @@ SET
 `
 
 type UpsertDataSourceParams struct {
-	ID          string
-	Name        string
-	Country     string
-	SourceType  string
-	BaseUrl     pgtype.Text
-	Description pgtype.Text
-	Config      []byte
-	IsActive    bool
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	ID          string      `json:"id"`
+	Name        string      `json:"name"`
+	Country     string      `json:"country"`
+	SourceType  string      `json:"source_type"`
+	BaseUrl     pgtype.Text `json:"base_url"`
+	Description pgtype.Text `json:"description"`
+	Config      []byte      `json:"config"`
+	IsActive    bool        `json:"is_active"`
+	CreatedAt   time.Time   `json:"created_at"`
+	UpdatedAt   time.Time   `json:"updated_at"`
 }
 
 // Upsert data source
@@ -929,20 +929,20 @@ SET
 `
 
 type UpsertUrlFrontierParams struct {
-	ID            string
-	DataSourceID  string
-	Domain        string
-	Url           string
-	Keyword       pgtype.Text
-	Priority      int16
-	Status        int16
-	Attempts      int16
-	LastCrawledAt pgtype.Timestamptz
-	NextCrawlAt   pgtype.Timestamptz
-	ErrorMessage  pgtype.Text
-	Metadata      []byte
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID            string             `json:"id"`
+	DataSourceID  string             `json:"data_source_id"`
+	Domain        string             `json:"domain"`
+	Url           string             `json:"url"`
+	Keyword       pgtype.Text        `json:"keyword"`
+	Priority      int16              `json:"priority"`
+	Status        int16              `json:"status"`
+	Attempts      int16              `json:"attempts"`
+	LastCrawledAt pgtype.Timestamptz `json:"last_crawled_at"`
+	NextCrawlAt   pgtype.Timestamptz `json:"next_crawl_at"`
+	ErrorMessage  pgtype.Text        `json:"error_message"`
+	Metadata      []byte             `json:"metadata"`
+	CreatedAt     time.Time          `json:"created_at"`
+	UpdatedAt     time.Time          `json:"updated_at"`
 }
 
 // =============================================
