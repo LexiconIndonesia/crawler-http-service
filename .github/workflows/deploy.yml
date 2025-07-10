@@ -1,0 +1,178 @@
+name: Deploy Production to VPS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image_name: ${{ steps.meta.outputs.tags }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/crawler-http-service
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  deploy:
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository for compose file
+        uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            export APP_DIR="/opt/crawler-http-service"
+            mkdir -p $APP_DIR
+            cd $APP_DIR
+
+            # Create production environment file from secrets
+            echo "LISTEN_PORT=${{ secrets.LISTEN_PORT || '8080' }}" > .env.prod
+            echo "POSTGRES_DB_NAME=${{ secrets.POSTGRES_DB_NAME }}" >> .env.prod
+            echo "POSTGRES_USERNAME=${{ secrets.POSTGRES_USERNAME }}" >> .env.prod
+            echo "POSTGRES_PORT=${{ secrets.POSTGRES_PORT || '5432' }}" >> .env.prod
+            echo "NATS_USER=${{ secrets.NATS_USER }}" >> .env.prod
+            echo "NATS_PASSWORD=${{ secrets.NATS_PASSWORD }}" >> .env.prod
+            echo "NATS_PORT=${{ secrets.NATS_PORT || '4222' }}" >> .env.prod
+            echo "NATS_PORT_MONITORING=${{ secrets.NATS_PORT_MONITORING || '8222' }}" >> .env.prod
+            echo "REDIS_PORT=${{ secrets.REDIS_PORT || '6379' }}" >> .env.prod
+            echo "GCS_STORAGE_BUCKET=${{ secrets.GCS_STORAGE_BUCKET }}" >> .env.prod
+            echo "IMAGE_NAME=${{ needs.build_and_push.outputs.image_name }}" >> .env.prod
+
+            # Create docker-compose.prod.yml on the VPS
+            # This avoids cloning the repo on the server
+            cat <<'EOF' > docker-compose.prod.yml
+            version: "3.8"
+
+            services:
+              app:
+                image: ${IMAGE_NAME}
+                ports:
+                  - ${LISTEN_PORT:-8080}:${LISTEN_PORT:-8080}
+                depends_on:
+                  - postgres
+                  - nats
+                  - redis
+                environment:
+                  - POSTGRES_HOST=postgres
+                  - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+                  - NATS_HOST=nats
+                  - NATS_PORT=${NATS_PORT:-4222}
+                  - NATS_USER=${NATS_USER:-}
+                  - NATS_PASSWORD=${NATS_PASSWORD:-}
+                  - NATS_JETSTREAM_ENABLED=${NATS_JETSTREAM_ENABLED:-true}
+                  - NATS_PORT_MONITORING=${NATS_PORT_MONITORING:-8222}
+                  - REDIS_HOST=redis
+                  - REDIS_PORT=${REDIS_PORT:-6379}
+                  - GCS_STORAGE_BUCKET=${GCS_STORAGE_BUCKET:-lexicon-bo-bucket}
+                  - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_credentials
+                networks:
+                  - app-network
+                secrets:
+                  - gcp_credentials
+                deploy:
+                  restart_policy:
+                    condition: any
+
+              postgres:
+                image: "postgres:16.2"
+                ports:
+                  - ${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}
+                environment:
+                  POSTGRES_DATABASE: "${POSTGRES_DB_NAME}"
+                  POSTGRES_USER: "${POSTGRES_USERNAME}"
+                  POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+                volumes:
+                  - "app-postgres:/var/lib/postgresql/data"
+                networks:
+                  - app-network
+                secrets:
+                  - postgres_password
+                deploy:
+                  restart_policy:
+                    condition: any
+
+              nats:
+                image: "nats:2.10-alpine"
+                ports:
+                  - "${NATS_PORT:-4222}:4222" # Client connections
+                  - "${NATS_PORT_MONITORING:-8222}:8222" # HTTP monitoring
+                command: "-js -m 8222 --jetstream ${NATS_ADDITIONAL_ARGS:-}"
+                volumes:
+                  - "app-nats-data:/data"
+                networks:
+                  - app-network
+                deploy:
+                  restart_policy:
+                    condition: any
+
+              redis:
+                image: "eqalpha/keydb:latest"
+                ports:
+                  - "${REDIS_PORT:-6379}:6379"
+                volumes:
+                  - "app-redis:/data"
+                networks:
+                  - app-network
+                deploy:
+                  restart_policy:
+                    condition: any
+
+            networks:
+              app-network:
+                driver: bridge
+
+            volumes:
+              app-postgres:
+                driver: local
+              app-nats-data:
+                driver: local
+              app-redis:
+                driver: local
+
+            secrets:
+              postgres_password:
+                external: true
+              gcp_credentials:
+                external: true
+            EOF
+
+            # Deploy the stack
+            echo "Pulling latest image: ${{ needs.build_and_push.outputs.image_name }}"
+            docker pull ${{ needs.build_and_push.outputs.image_name }}
+
+            echo "Deploying stack..."
+            docker stack deploy --compose-file docker-compose.prod.yml --with-registry-auth crawler_stack
+
+            echo "Deployment successful."

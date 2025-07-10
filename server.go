@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/adryanev/go-http-service-template/common/db"
-	"github.com/adryanev/go-http-service-template/common/messaging"
-	"github.com/adryanev/go-http-service-template/module"
+	"github.com/LexiconIndonesia/crawler-http-service/common/config"
+	"github.com/LexiconIndonesia/crawler-http-service/common/db"
+	"github.com/LexiconIndonesia/crawler-http-service/common/messaging"
+	"github.com/LexiconIndonesia/crawler-http-service/handler"
+	"github.com/LexiconIndonesia/crawler-http-service/middlewares"
 
-	_ "github.com/adryanev/go-http-service-template/docs"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
@@ -20,13 +21,13 @@ import (
 
 type AppHttpServer struct {
 	router     *chi.Mux
-	cfg        config
+	cfg        config.Config
 	server     *http.Server
 	db         *db.DB
-	natsClient *messaging.NatsClient
+	natsClient *messaging.NatsBroker
 }
 
-func NewAppHttpServer(cfg config) (*AppHttpServer, error) {
+func NewAppHttpServer(cfg config.Config) (*AppHttpServer, error) {
 	r := chi.NewRouter()
 
 	// Basic CORS
@@ -34,8 +35,32 @@ func NewAppHttpServer(cfg config) (*AppHttpServer, error) {
 	r.Use(cors.Handler(cors.Options{
 		// AllowedOrigins:   []string{"https://foo.com"}, // Use this to allow specific origin hosts
 		// AllowedOrigins: []string{"https://bo.lexicon.id", "http://localhost:3000"},
-		AllowedOrigins: []string{"*"},
-		// AllowOriginFunc:  func(r *http.Request, origin string) bool { return true },
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			// Allow all lexicon.id subdomains (*.lexicon.id)
+			if origin == "https://lexicon.id" || origin == "http://lexicon.id" {
+				return true
+			}
+			// Check for subdomains of lexicon.id
+			if len(origin) > 11 { // "lexicon.id" is 10 chars, so we need at least subdomain + dot
+				if origin[len(origin)-11:] == ".lexicon.id" {
+					return true
+				}
+			}
+			// Allow localhost for development
+			if len(origin) >= 16 && origin[:16] == "http://localhost" {
+				return true
+			}
+			if len(origin) >= 17 && origin[:17] == "https://localhost" {
+				return true
+			}
+			if len(origin) >= 14 && origin[:14] == "http://127.0.0" {
+				return true
+			}
+			if len(origin) >= 15 && origin[:15] == "https://127.0.0" {
+				return true
+			}
+			return false
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-API-KEY", "X-ACCESS-TIME", "X-REQUEST-SIGNATURE", "X-API-USER", "X-REQUEST-IDENTITY"},
 		ExposedHeaders:   []string{"Link"},
@@ -65,7 +90,7 @@ func (s *AppHttpServer) SetDB(db *db.DB) {
 }
 
 // SetNatsClient sets the NATS client dependency
-func (s *AppHttpServer) SetNatsClient(client *messaging.NatsClient) {
+func (s *AppHttpServer) SetNatsClient(client *messaging.NatsBroker) {
 	s.natsClient = client
 }
 
@@ -82,24 +107,36 @@ func (s *AppHttpServer) setupRoute() {
 		log.Warn().Msg("NATS client dependency not set")
 	}
 
-	// Create the module with dependency injection
-	mod := module.NewModule(s.db, s.natsClient)
-
 	// API Documentation with Swagger
 	r.Get("/swagger/*", httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"), // The URL pointing to API definition
 	))
 
+	// Public health endpoint (no authentication required)
+	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		if _, err := w.Write([]byte(`{"status":"healthy","service":"crawler-http-service"}`)); err != nil {
+			log.Error().Err(err).Msg("Failed to write health check response")
+		}
+	})
+
 	r.Route("/v1", func(r chi.Router) {
-		// r.Use(middlewares.AccessTime())
-		// r.Use(middlewares.ApiKey(cfg.BackendApiKey, cfg.ServerSalt))
-		// r.Use(middlewares.RequestSignature(cfg.ServerSalt))
+		r.Use(middlewares.AccessTime())
+		r.Use(middlewares.ApiKey(s.cfg.Security.BackendApiKey, s.cfg.Security.ServerSalt))
+		r.Use(middlewares.RequestSignature(s.cfg.Security.ServerSalt))
 
-		// Use new module structure with DI
-		r.Mount("/module", mod.Router())
+		// Handlers
+		crawlerHandler := handler.NewCrawlerHandler(s.db, s.natsClient, s.cfg)
+		scraperHandler := handler.NewScraperHandler(s.db, s.natsClient, s.cfg)
+		dataSourceHandler := handler.NewDataSourceHandler(s.db)
+		workManagerHandler := handler.NewWorkManagerHandler(s.db, s.cfg)
 
-		// Legacy module access (will be deprecated)
-		r.Mount("/legacy-module", mod.SetupBaseRoutes())
+		r.Mount("/crawlers", crawlerHandler.Router())
+		r.Mount("/scrapers", scraperHandler.Router())
+		r.Mount("/datasources", dataSourceHandler.Router())
+		r.Mount("/works", workManagerHandler.Router())
+
 	})
 }
 

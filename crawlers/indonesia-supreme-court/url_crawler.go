@@ -1,37 +1,45 @@
-package indonesia_supreme_court
+package isc
 
 import (
 	"fmt"
 	stdUrl "net/url"
 	"strconv"
+	"strings"
 
+	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
 	"github.com/rs/zerolog/log"
 )
 
 type urlCrawler struct {
-	BaseUrl      string
-	SortBy       string
-	CurrentPage  int
-	SortOrder    string
-	SearchPhrase string
+	baseURL      string
+	sortBy       string
+	currentPage  int
+	sortOrder    string
+	searchPhrase string
 }
 
-func (u *urlCrawler) constructUrl() string {
-	return fmt.Sprintf("%s?q=%s&page=%d&obf=%s&obm=%s", u.BaseUrl, u.SearchPhrase, u.CurrentPage, u.SortBy, u.SortOrder)
+func (u *urlCrawler) constructURL() string {
+	builder := strings.Builder{}
+	builder.WriteString(u.baseURL)
+	builder.WriteString("?")
+	builder.WriteString(fmt.Sprintf("q=%s", u.searchPhrase))
+	builder.WriteString(fmt.Sprintf("&page=%d", u.currentPage))
+	builder.WriteString(fmt.Sprintf("&obf=%s", u.sortBy))
+	builder.WriteString(fmt.Sprintf("&obm=%s", u.sortOrder))
+	return builder.String()
 }
 
 func (u *urlCrawler) copy() urlCrawler {
 	return urlCrawler{
-		BaseUrl:      u.BaseUrl,
-		SortBy:       u.SortBy,
-		CurrentPage:  u.CurrentPage,
-		SortOrder:    u.SortOrder,
-		SearchPhrase: u.SearchPhrase,
+		baseURL:      u.baseURL,
+		sortBy:       u.sortBy,
+		currentPage:  u.currentPage,
+		sortOrder:    u.sortOrder,
+		searchPhrase: u.searchPhrase,
 	}
-
 }
 
-func newUrlCrawler(baseUrl string) (urlCrawler, error) {
+func newURLCrawler(baseUrl string, config crawler.IndonesiaSupremeCourtConfig, page int) (urlCrawler, error) {
 	parsedUrl, err := stdUrl.Parse(baseUrl)
 	if err != nil {
 		log.Error().Err(err).Msg("Error parsing URL")
@@ -52,11 +60,25 @@ func newUrlCrawler(baseUrl string) (urlCrawler, error) {
 	}
 
 	return urlCrawler{
-		BaseUrl:      base,
-		SortBy:       sortBy,
-		SearchPhrase: searchPhrase,
-		CurrentPage:  currentPageInt,
-		SortOrder:    sortOrder,
+		baseURL:      base,
+		sortBy:       sortBy,
+		searchPhrase: searchPhrase,
+		currentPage:  currentPageInt,
+		sortOrder:    sortOrder,
 	}, nil
+}
+func newStartURLCrawler(baseConfig crawler.BaseCrawlerConfig, config crawler.IndonesiaSupremeCourtConfig) (urlCrawler, error) {
+	firstURL := fmt.Sprintf("%s%s", baseConfig.DataSource.BaseUrl.String, config.ListPath)
 
+	return newURLCrawler(firstURL, config, 1)
+}
+
+func generateUrls(url urlCrawler, startPage int, endPage int) []urlCrawler {
+	urls := []urlCrawler{}
+	for i := startPage; i <= endPage; i++ {
+		newURLCrawler := url.copy()
+		newURLCrawler.currentPage = i
+		urls = append(urls, newURLCrawler)
+	}
+	return urls
 }

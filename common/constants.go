@@ -3,9 +3,6 @@ package common
 const (
 	// AppName is the name of the application
 	AppName = "lexicon-crawler"
-
-	// GCS constants
-	GCSBucketName = "lexicon-bo-bucket"
 )
 
 // CrawlerType represents the type of crawler
@@ -22,4 +19,11 @@ const (
 	LKPPBlacklist CrawlerType = "lkpp-blacklist-crawler"
 	// SingaporeSupremeCourt represents the Singapore Supreme Court crawler
 	SingaporeSupremeCourt CrawlerType = "singapore-supreme-court-crawler"
+)
+
+type ContentType string
+
+const (
+	ContentTypeJudgment   ContentType = "judgment"
+	ContentTypeRegulation ContentType = "regulation"
 )

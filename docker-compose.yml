@@ -8,14 +8,23 @@ services:
     depends_on:
       - postgres
       - nats
+      - redis
     volumes:
       - ./:/app
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
-      - NATS_URL=nats://nats:${NATS_PORT:-4222}
+      - NATS_HOST=nats
+      - NATS_PORT=${NATS_PORT:-4222}
+      - NATS_USER=${NATS_USER:-}
+      - NATS_PASSWORD=${NATS_PASSWORD:-}
+      - NATS_JETSTREAM_ENABLED=${NATS_JETSTREAM_ENABLED:-true}
+      - NATS_PORT_MONITORING=${NATS_PORT_MONITORING:-8222}
+      - REDIS_HOST=redis
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - GCS_STORAGE_BUCKET=${GCS_STORAGE_BUCKET:-lexicon-bo-bucket}
     networks:
-      - template-network
+      - app-network
     restart: unless-stopped
 
   postgres:
@@ -30,9 +39,9 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
       POSTGRES_ALLOW_EMPTY_PASSWORD: 1
     volumes:
-      - "template-postgres:/var/lib/postgresql/data"
+      - "app-postgres:/var/lib/postgresql/data"
     networks:
-      - template-network
+      - app-network
 
   nats:
     image: "nats:2.10-alpine"
@@ -41,17 +50,29 @@ services:
       - "${NATS_MONITORING_PORT:-8222}:8222"  # HTTP monitoring
     command: "-js -m 8222 --jetstream ${NATS_ADDITIONAL_ARGS:-}"
     volumes:
-      - "template-nats-data:/data"
+      - "app-nats-data:/data"
     networks:
-      - template-network
+      - app-network
+    restart: unless-stopped
+
+  redis:
+    image: "eqalpha/keydb:latest"
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - "app-redis:/data"
+    networks:
+      - app-network
     restart: unless-stopped
 
 networks:
-  template-network:
+  app-network:
     driver: bridge
 
 volumes:
-  template-postgres:
+  app-postgres:
     driver: local
-  template-nats-data:
+  app-nats-data:
+    driver: local
+  app-redis:
     driver: local

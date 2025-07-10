@@ -1,0 +1,368 @@
+{
+	"info": {
+		"_postman_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+		"name": "crawler-http-service",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "crawlers",
+			"item": [
+				{
+					"name": "Run Crawler by Keyword",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"data_source\": \"indonesia-supreme-court\",\n    \"action\": \"crawl:by_keyword\",\n    \"keyword\": \"pidana\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/crawlers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"crawlers"
+							]
+						},
+						"description": "Possible actions: `crawl:all`, `crawl:by_keyword`, `crawl:by_url`"
+					},
+					"response": []
+				},
+				{
+					"name": "Run Crawler by URL",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"data_source\": \"indonesia-supreme-court\",\n    \"action\": \"crawl:by_url\",\n    \"url\": \"<some_url>\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/crawlers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"crawlers"
+							]
+						},
+						"description": "Possible actions: `crawl:all`, `crawl:by_keyword`, `crawl:by_url`"
+					},
+					"response": []
+				},
+				{
+					"name": "Run Crawler for All",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"data_source\": \"indonesia-supreme-court\",\n    \"action\": \"crawl:all\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/crawlers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"crawlers"
+							]
+						},
+						"description": "Possible actions: `crawl:all`, `crawl:by_keyword`, `crawl:by_url`"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "scrapers",
+			"item": [
+				{
+					"name": "Run Scraper by ID",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"data_source\": \"indonesia-supreme-court\",\n    \"action\": \"scrape:by_id\",\n    \"url_frontier_id\": \"<url_frontier_id>\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/scrapers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"scrapers"
+							]
+						},
+						"description": "Possible actions: `scrape:by_id`, `scrape:all`"
+					},
+					"response": []
+				},
+				{
+					"name": "Run Scraper for All",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"data_source\": \"indonesia-supreme-court\",\n    \"action\": \"scrape:all\"\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/scrapers",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"scrapers"
+							]
+						},
+						"description": "Possible actions: `scrape:by_id`, `scrape:all`"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "datasources",
+			"item": [
+				{
+					"name": "List DataSources",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/datasources",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"datasources"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Create DataSource",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"var jsonData = JSON.parse(responseBody);",
+									"postman.setEnvironmentVariable(\"dataSourceId\", jsonData.id);"
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"indonesia-supreme-court\",\n    \"country\": \"ID\",\n    \"source_type\": \"judicial\",\n    \"base_url\": \"https://putusan3.mahkamahagung.go.id/direktori.html\",\n    \"description\": \"Direktori Putusan Mahkamah Agung RI\",\n    \"config\": {},\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/datasources",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"datasources"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get DataSource",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/datasources/{{dataSourceId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"datasources",
+								"{{dataSourceId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Update DataSource",
+					"request": {
+						"method": "PUT",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"name\": \"indonesia-supreme-court-updated\",\n    \"country\": \"ID\",\n    \"source_type\": \"judicial\",\n    \"base_url\": \"https://putusan3.mahkamahagung.go.id/direktori.html\",\n    \"description\": \"Direktori Putusan Mahkamah Agung RI - Updated\",\n    \"config\": {},\n    \"is_active\": true\n}"
+						},
+						"url": {
+							"raw": "{{baseUrl}}/datasources/{{dataSourceId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"datasources",
+								"{{dataSourceId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Delete DataSource",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/datasources/{{dataSourceId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"datasources",
+								"{{dataSourceId}}"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "works",
+			"item": [
+				{
+					"name": "List Works",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/works?page=1&limit=10&status=running&q=search",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"works"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "limit",
+									"value": "10"
+								},
+								{
+									"key": "status",
+									"value": "running"
+								},
+								{
+									"key": "q",
+									"value": "search"
+								}
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Get Work",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/works/{{jobId}}",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"works",
+								"{{jobId}}"
+							]
+						}
+					},
+					"response": []
+				},
+				{
+					"name": "Cancel Work",
+					"request": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "{{baseUrl}}/works/{{jobId}}/cancel",
+							"host": [
+								"{{baseUrl}}"
+							],
+							"path": [
+								"works",
+								"{{jobId}}",
+								"cancel"
+							]
+						}
+					},
+					"response": []
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080/v1"
+		},
+		{
+			"key": "dataSourceId",
+			"value": ""
+		},
+		{
+			"key": "jobId",
+			"value": ""
+		}
+	]
+}

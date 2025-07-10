@@ -1,31 +1,44 @@
-package singapore_supreme_court
+package ssc
 
 import (
-	"time"
+	"encoding/json"
+
+	"github.com/LexiconIndonesia/crawler-http-service/common/models"
 )
 
-// JudgmentItem represents a judgment from the Singapore Supreme Court
-type JudgmentItem struct {
-	ID             string    `json:"id"`
-	Title          string    `json:"title"`
-	URL            string    `json:"url"`
-	JudgmentDate   time.Time `json:"judgment_date"`
-	CourtName      string    `json:"court_name"`
-	CaseNumber     string    `json:"case_number"`
-	JudgmentPDFURL string    `json:"judgment_pdf_url"`
-	Category       string    `json:"category"`
-	Judges         []string  `json:"judges"`
-	Parties        []string  `json:"parties"`
+var EmptyMetadata Metadata
+
+type Metadata struct {
+	Title               string                      `json:"title"`
+	Defendant           string                      `json:"defendant"`
+	Numbers             []string                    `json:"numbers"`
+	CitationNumber      string                      `json:"citation_number"`
+	Classifications     []string                    `json:"classifications"`
+	Year                string                      `json:"year"`
+	JudicalInstitution  string                      `json:"judicial_institution"`
+	Judges              string                      `json:"judges"`
+	Counsel             string                      `json:"counsel"`
+	Verdict             string                      `json:"verdict"`
+	VerdictMarkdown     string                      `json:"verdict_markdown"`
+	DecisionDate        string                      `json:"decision_date"`
+	PdfUrl              string                      `json:"pdf_url"`
+	ExtractionArtifacts []models.ExtractionArtifact `json:"extraction_artifacts"`
 }
 
-// SearchParams represents search parameters for the Singapore Supreme Court
-type SearchParams struct {
-	Keyword    string `json:"keyword"`
-	StartDate  string `json:"start_date"` // Format: YYYY-MM-DD
-	EndDate    string `json:"end_date"`   // Format: YYYY-MM-DD
-	Category   string `json:"category"`
-	SortBy     string `json:"sort_by"`
-	SortOrder  string `json:"sort_order"` // asc or desc
-	PageNumber int    `json:"page_number"`
-	PageSize   int    `json:"page_size"`
+type UrlFrontierMetadata struct {
+	CitationNumber string   `json:"citation_number"`
+	DecisionDate   string   `json:"decision_date"`
+	Title          string   `json:"title"`
+	Categories     []string `json:"categories"`
+	CaseNumbers    []string `json:"case_numbers"`
+}
+
+func (m *UrlFrontierMetadata) ToJson() ([]byte, error) {
+	return json.Marshal(m)
+}
+
+func UrlFrontierMetadataFromJson(j []byte) (*UrlFrontierMetadata, error) {
+	var m UrlFrontierMetadata
+	err := json.Unmarshal(j, &m)
+	return &m, err
 }
