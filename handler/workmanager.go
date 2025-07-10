@@ -1,13 +1,11 @@
 package handler
 
 import (
-	"math"
 	"net/http"
 	"strconv"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/config"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
-	"github.com/LexiconIndonesia/crawler-http-service/common/models"
 	"github.com/LexiconIndonesia/crawler-http-service/common/utils"
 	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
@@ -89,19 +87,7 @@ func (h *WorkManagerHandler) handleListWorks(w http.ResponseWriter, r *http.Requ
 		utils.WriteError(w, http.StatusInternalServerError, "Failed to count jobs")
 		return
 	}
-
-	meta := models.MetaResponse{
-		CurrentPage: int64(page),
-		LastPage:    int64(math.Ceil(float64(total) / float64(limit))),
-		PerPage:     int64(limit),
-		Total:       total,
-	}
-	response := models.BasePaginationResponse{
-		Data: jobs,
-		Meta: meta,
-	}
-
-	utils.WriteJSON(w, http.StatusOK, response)
+	utils.WritePagination(w, http.StatusOK, jobs, page, limit, total)
 }
 
 func (h *WorkManagerHandler) handleGetWork(w http.ResponseWriter, r *http.Request) {
@@ -129,7 +115,7 @@ func (h *WorkManagerHandler) handleGetWork(w http.ResponseWriter, r *http.Reques
 		Logs: logs,
 	}
 
-	utils.WriteJSON(w, http.StatusOK, models.BaseResponse{Data: detail})
+	utils.WriteJSON(w, http.StatusOK, detail)
 }
 
 func (h *WorkManagerHandler) handleCancelWork(w http.ResponseWriter, r *http.Request) {

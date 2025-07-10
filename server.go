@@ -35,8 +35,32 @@ func NewAppHttpServer(cfg config.Config) (*AppHttpServer, error) {
 	r.Use(cors.Handler(cors.Options{
 		// AllowedOrigins:   []string{"https://foo.com"}, // Use this to allow specific origin hosts
 		// AllowedOrigins: []string{"https://bo.lexicon.id", "http://localhost:3000"},
-		AllowedOrigins: []string{"*"},
-		// AllowOriginFunc:  func(r *http.Request, origin string) bool { return true },
+		AllowOriginFunc: func(r *http.Request, origin string) bool {
+			// Allow all lexicon.id subdomains (*.lexicon.id)
+			if origin == "https://lexicon.id" || origin == "http://lexicon.id" {
+				return true
+			}
+			// Check for subdomains of lexicon.id
+			if len(origin) > 11 { // "lexicon.id" is 10 chars, so we need at least subdomain + dot
+				if origin[len(origin)-11:] == ".lexicon.id" {
+					return true
+				}
+			}
+			// Allow localhost for development
+			if len(origin) >= 16 && origin[:16] == "http://localhost" {
+				return true
+			}
+			if len(origin) >= 17 && origin[:17] == "https://localhost" {
+				return true
+			}
+			if len(origin) >= 14 && origin[:14] == "http://127.0.0" {
+				return true
+			}
+			if len(origin) >= 15 && origin[:15] == "https://127.0.0" {
+				return true
+			}
+			return false
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-API-KEY", "X-ACCESS-TIME", "X-REQUEST-SIGNATURE", "X-API-USER", "X-REQUEST-IDENTITY"},
 		ExposedHeaders:   []string{"Link"},

@@ -354,6 +354,9 @@ func (p *Pool[T]) executeTask(ctx context.Context, task Executor[T], workerID in
 			case p.results <- taskResult:
 			case <-time.After(1 * time.Second):
 				log.Warn().Str("taskID", task.ExecutorID()).Msg("Result channel full after panic, dropping result")
+			case <-p.quit:
+				// Pool is shutting down, don't block
+				log.Debug().Str("taskID", task.ExecutorID()).Msg("Pool shutting down after panic, dropping result")
 			}
 
 			atomic.AddInt64(&p.tasksCompleted, 1)
