@@ -18,6 +18,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
 	"github.com/jackc/pgx/v5"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
 
@@ -193,14 +194,15 @@ func (s *BaseScraper) UploadFileToStorage(ctx context.Context, objectName string
 		return "", fmt.Errorf("storage service not initialized")
 	}
 
-	objectName, err := s.StorageService.Upload(ctx, s.Config.StorageBucket, objectName, content, contentType)
+	uploadedObject, err := s.StorageService.Upload(ctx, s.Config.StorageBucket, objectName, content, contentType)
 	if err != nil {
 		log.Error().Err(err).Str("bucket", s.Config.StorageBucket).Str("object", objectName).Msg("Failed to upload file to storage")
 		return "", err
 	}
 
-	log.Debug().Str("object", objectName).Str("bucket", s.Config.StorageBucket).Str("object", objectName).Msg("Uploaded file to storage")
-	return objectName, nil
+	log.Debug().Str("object", uploadedObject).Str("bucket", s.Config.StorageBucket).Msg("Uploaded file to storage")
+
+	return uploadedObject, nil
 }
 
 // HandlePdf downloads a PDF from a URL and uploads it to the storage service
@@ -299,4 +301,56 @@ func (s *BaseScraper) HandleHtml(ctx context.Context, extractionID string, htmlU
 	}
 
 	return artifact, nil
+}
+
+// WithHeartbeat executes a long-running operation with periodic heartbeating to JetStream
+// This prevents the message from timing out during extended processing
+func (s *BaseScraper) WithHeartbeat(ctx context.Context, msg jetstream.Msg, operation func(ctx context.Context) error, heartbeatInterval time.Duration) error {
+	if heartbeatInterval <= 0 {
+		heartbeatInterval = 30 * time.Second // Default to 30 seconds
+	}
+
+	// Create a context for the heartbeating goroutine
+	heartbeatCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Channel to signal when the operation is complete
+	done := make(chan struct{})
+	var operationErr error
+
+	// Start heartbeating in a separate goroutine
+	go func() {
+		ticker := time.NewTicker(heartbeatInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-heartbeatCtx.Done():
+				return
+			case <-done:
+				return
+			case <-ticker.C:
+				if err := msg.InProgress(); err != nil {
+					log.Error().Err(err).Msg("Failed to send heartbeat")
+					// Continue anyway, as the heartbeat failure shouldn't stop processing
+				} else {
+					log.Debug().Msg("Sent heartbeat to JetStream")
+				}
+			}
+		}
+	}()
+
+	// Execute the operation
+	go func() {
+		defer close(done)
+		operationErr = operation(ctx)
+	}()
+
+	// Wait for either completion or context cancellation
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return operationErr
+	}
 }

@@ -910,6 +910,30 @@ func (q *Queries) UpsertDataSource(ctx context.Context, arg UpsertDataSourcePara
 	return err
 }
 
+const upsertJobStatus = `-- name: UpsertJobStatus :exec
+INSERT INTO jobs (
+    id,
+    status
+) VALUES (
+    $1, $2
+)
+ON CONFLICT (id) DO UPDATE
+SET
+    status = $2,
+    updated_at = NOW()
+`
+
+type UpsertJobStatusParams struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+// Upsert job status (atomic insert or update)
+func (q *Queries) UpsertJobStatus(ctx context.Context, arg UpsertJobStatusParams) error {
+	_, err := q.db.Exec(ctx, upsertJobStatus, arg.ID, arg.Status)
+	return err
+}
+
 const upsertUrlFrontier = `-- name: UpsertUrlFrontier :exec
 
 INSERT INTO url_frontiers (id, data_source_id, domain, url, keyword, priority, status, attempts, last_crawled_at, next_crawl_at, error_message, metadata, created_at, updated_at)

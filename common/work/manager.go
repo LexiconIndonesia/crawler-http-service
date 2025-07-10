@@ -10,7 +10,6 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	redisv9 "github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 )
@@ -174,22 +173,12 @@ func (wm *WorkManager) updateJobStatus(ctx context.Context, workID, status strin
 		return nil
 	}
 
-	// First try to update; if it affects no rows, create.
-	if _, err := wm.db.Queries.UpdateJobStatus(ctx, repository.UpdateJobStatusParams{
+	// Use atomic upsert to avoid race conditions
+	if err := wm.db.Queries.UpsertJobStatus(ctx, repository.UpsertJobStatusParams{
 		ID:     workID,
 		Status: status,
 	}); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Job row doesn't exist yet; create it.
-			if _, createErr := wm.db.Queries.CreateJob(ctx, repository.CreateJobParams{
-				ID:     workID,
-				Status: status,
-			}); createErr != nil {
-				return fmt.Errorf("create job row: %w", createErr)
-			}
-			return nil
-		}
-		return fmt.Errorf("update job status: %w", err)
+		return fmt.Errorf("upsert job status: %w", err)
 	}
 
 	return nil

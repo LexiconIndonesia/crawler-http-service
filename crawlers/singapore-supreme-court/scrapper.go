@@ -25,6 +25,7 @@ import (
 	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
 
@@ -336,35 +337,38 @@ func (s *SingaporeSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context
 }
 
 // Consume processes a message from a queue
-func (s *SingaporeSupremeCourtScraper) Consume(ctx context.Context, message []byte) error {
+func (s *SingaporeSupremeCourtScraper) Consume(ctx context.Context, message jetstream.Msg) error {
 	log.Info().Msg("Processing Singapore Supreme Court message from queue")
 
 	var req messaging.ScrapeRequest
-	if err := json.Unmarshal(message, &req); err != nil {
+	if err := json.Unmarshal(message.Data(), &req); err != nil {
 		log.Error().Err(err).Msg("Failed to unmarshal message into ScrapeRequest")
 		return err
 	}
 
-	switch req.Type {
-	case constants.ScrapeAllAction:
-		log.Info().Str("jobID", req.ID).Msg("Received request to scrape all")
-		return s.ScrapeAll(ctx, req.ID)
-	case constants.ScrapeByIDAction:
-		if req.Payload.URLFrontierID == "" {
-			err := fmt.Errorf("UrlFrontierID cannot be empty for type '%s'", constants.ScrapeByIDAction)
-			log.Error().Err(err).Msg("Invalid scrape request")
-			return err
-		}
-		log.Info().Str("id", req.Payload.URLFrontierID).Str("jobID", req.ID).Msg("Received URL frontier to scrape")
+	// Use WithHeartbeat for long-running scraping operations
+	return s.BaseScraper.WithHeartbeat(ctx, message, func(ctx context.Context) error {
+		switch req.Type {
+		case constants.ScrapeAllAction:
+			log.Info().Str("jobID", req.ID).Msg("Received request to scrape all")
+			return s.ScrapeAll(ctx, req.ID)
+		case constants.ScrapeByIDAction:
+			if req.Payload.URLFrontierID == "" {
+				err := fmt.Errorf("UrlFrontierID cannot be empty for type '%s'", constants.ScrapeByIDAction)
+				log.Error().Err(err).Msg("Invalid scrape request")
+				return err
+			}
+			log.Info().Str("id", req.Payload.URLFrontierID).Str("jobID", req.ID).Msg("Received URL frontier to scrape")
 
-		// You can either call ScrapeByURLFrontierID or a more direct scraping method
-		// if you have the full frontier object.
-		// ScrapeByURLFrontierID fetches it again, which might be redundant but safer.
-		return s.ScrapeByURLFrontierID(ctx, req.Payload.URLFrontierID, req.ID)
-	default:
-		log.Error().Str("type", string(req.Type)).Msg("Invalid action type for scraper")
-		return fmt.Errorf("invalid action type for scraper: %s", req.Type)
-	}
+			// You can either call ScrapeByURLFrontierID or a more direct scraping method
+			// if you have the full frontier object.
+			// ScrapeByURLFrontierID fetches it again, which might be redundant but safer.
+			return s.ScrapeByURLFrontierID(ctx, req.Payload.URLFrontierID, req.ID)
+		default:
+			log.Error().Str("type", string(req.Type)).Msg("Invalid action type for scraper")
+			return fmt.Errorf("invalid action type for scraper: %s", req.Type)
+		}
+	}, 30*time.Second) // Send heartbeat every 30 seconds
 }
 
 func (s *SingaporeSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod.Page, urlFrontier repository.UrlFrontier, jobID string) (repository.Extraction, error) {

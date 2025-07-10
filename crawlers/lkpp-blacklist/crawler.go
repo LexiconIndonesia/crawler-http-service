@@ -3,6 +3,7 @@ package lkpp
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common"
 	"github.com/LexiconIndonesia/crawler-http-service/common/crawler"
@@ -13,6 +14,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
 
@@ -124,15 +126,18 @@ func (c *LKPPBlacklistCrawler) CrawlByURL(ctx context.Context, url string, jobID
 }
 
 // Consume processes a message from a queue
-func (c *LKPPBlacklistCrawler) Consume(ctx context.Context, message []byte) error {
+func (c *LKPPBlacklistCrawler) Consume(ctx context.Context, message jetstream.Msg) error {
 	log.Info().Msg("Processing LKPP blacklist message from queue")
 
-	// In a real implementation, this would:
-	// 1. Unmarshal the message (likely a URL frontier or instruction)
-	// 2. Process it according to the crawler's logic
-	// 3. Create URL frontiers or perform other actions
+	// Use WithHeartbeat for long-running operations
+	return c.BaseCrawler.WithHeartbeat(ctx, message, func(ctx context.Context) error {
+		// In a real implementation, this would:
+		// 1. Unmarshal the message (likely a URL frontier or instruction)
+		// 2. Process it according to the crawler's logic
+		// 3. Create URL frontiers or perform other actions
 
-	return common.ErrNotImplemented
+		return common.ErrNotImplemented
+	}, 30*time.Second) // Send heartbeat every 30 seconds
 }
 
 // ExtractElements extracts URL frontiers from a page

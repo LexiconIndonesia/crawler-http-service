@@ -18,6 +18,7 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 	"github.com/samber/lo"
 )
@@ -708,28 +709,31 @@ func (c *IndonesiaSupremeCourtCrawler) CrawlPage(ctx context.Context, page *rod.
 }
 
 // Consume processes a message from a queue
-func (c *IndonesiaSupremeCourtCrawler) Consume(ctx context.Context, message []byte) error {
+func (c *IndonesiaSupremeCourtCrawler) Consume(ctx context.Context, message jetstream.Msg) error {
 	l := log.Info().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID)
 
 	var msg messaging.CrawlRequest
-	if err := json.Unmarshal(message, &msg); err != nil {
+	if err := json.Unmarshal(message.Data(), &msg); err != nil {
 		log.Error().Str("dataSourceID", c.BaseCrawler.Config.DataSource.ID).Err(err).Msg("Failed to unmarshal crawl request")
 		return err
 	}
 
 	l.Msgf("Consuming message: %+v", msg)
 
-	switch msg.Type {
-	case constants.CrawlAllAction:
-		return c.CrawlAll(ctx, msg.ID)
-	case constants.CrawlByKeywordAction:
-		return c.CrawlByKeyword(ctx, msg.Payload.Keyword, msg.ID)
-	case constants.CrawlByURLAction:
-		return c.CrawlByURL(ctx, msg.Payload.URL, msg.ID)
-	default:
-		log.Warn().Str("type", string(msg.Type)).Msg("Unknown crawl request type")
-		return fmt.Errorf("unknown crawl request type: %s", msg.Type)
-	}
+	// Use WithHeartbeat for long-running operations
+	return c.BaseCrawler.WithHeartbeat(ctx, message, func(ctx context.Context) error {
+		switch msg.Type {
+		case constants.CrawlAllAction:
+			return c.CrawlAll(ctx, msg.ID)
+		case constants.CrawlByKeywordAction:
+			return c.CrawlByKeyword(ctx, msg.Payload.Keyword, msg.ID)
+		case constants.CrawlByURLAction:
+			return c.CrawlByURL(ctx, msg.Payload.URL, msg.ID)
+		default:
+			log.Warn().Str("type", string(msg.Type)).Msg("Unknown crawl request type")
+			return fmt.Errorf("unknown crawl request type: %s", msg.Type)
+		}
+	}, 30*time.Second) // Send heartbeat every 30 seconds
 }
 
 func (c *IndonesiaSupremeCourtCrawler) createPage() (*rod.Page, error) {

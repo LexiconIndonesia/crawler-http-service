@@ -114,17 +114,21 @@ func RegisterCrawlers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 
 				for msg := range batch.Messages() {
 					log.Info().Str("crawler_name", name).Msg("Consuming message")
+
+					// Process the message first, then acknowledge
+					err = c.Consume(ctx, msg)
+					if err != nil {
+						log.Error().Err(err).Str("crawler_name", name).Msg("Failed to consume message")
+						// On error, we still acknowledge to avoid reprocessing bad messages
+					}
+
+					// Acknowledge the message after processing
 					err := msg.Ack()
 					if err != nil {
 						log.Error().Err(err).Str("crawler_name", name).Msg("Failed to acknowledge message")
+					} else {
+						log.Info().Str("crawler_name", name).Msg("Acknowledged message")
 					}
-					log.Info().Str("crawler_name", name).Msg("Acknowledged message")
-					err = c.Consume(ctx, msg.Data())
-					if err != nil {
-						log.Error().Err(err).Str("crawler_name", name).Msg("Failed to consume message")
-
-					}
-
 				}
 				if batch.Error() != nil {
 					log.Error().Err(batch.Error()).Str("crawler_name", name).Msg("Error during message batch processing")
@@ -240,18 +244,20 @@ func RegisterScrapers(ctx context.Context, natsClient *messaging.NatsBroker, dbC
 				for msg := range batch.Messages() {
 					log.Info().Str("scraper_name", name).Msg("Consuming message")
 
+					// Process the message first, then acknowledge
+					err = s.Consume(ctx, msg)
+					if err != nil {
+						log.Error().Err(err).Str("scraper_name", name).Msg("Failed to consume message")
+						// On error, we still acknowledge to avoid reprocessing bad messages
+					}
+
+					// Acknowledge the message after processing
 					err := msg.Ack()
 					if err != nil {
 						log.Error().Err(err).Str("scraper_name", name).Msg("Failed to acknowledge message")
+					} else {
+						log.Info().Str("scraper_name", name).Msg("Acknowledged message")
 					}
-					log.Info().Str("scraper_name", name).Msg("Acknowledged message")
-
-					err = s.Consume(ctx, msg.Data())
-					if err != nil {
-						log.Error().Err(err).Str("scraper_name", name).Msg("Failed to consume message")
-
-					}
-
 				}
 				if batch.Error() != nil {
 					log.Error().Err(batch.Error()).Str("scraper_name", name).Msg("Error during message batch processing")

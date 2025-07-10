@@ -19,9 +19,9 @@ import (
 	"github.com/LexiconIndonesia/crawler-http-service/common/services"
 	"github.com/LexiconIndonesia/crawler-http-service/common/storage"
 	"github.com/LexiconIndonesia/crawler-http-service/common/work"
-
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
 	"github.com/go-rod/rod"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/rs/zerolog/log"
 )
 
@@ -300,30 +300,33 @@ func (s *IndonesiaSupremeCourtScraper) ScrapeByURLFrontierID(ctx context.Context
 }
 
 // Consume processes a message from a queue
-func (s *IndonesiaSupremeCourtScraper) Consume(ctx context.Context, message []byte) error {
+func (s *IndonesiaSupremeCourtScraper) Consume(ctx context.Context, message jetstream.Msg) error {
 	log.Info().Msg("Processing Indonesia Supreme Court message from queue")
 
 	var req messaging.ScrapeRequest
-	if err := json.Unmarshal(message, &req); err != nil {
+	if err := json.Unmarshal(message.Data(), &req); err != nil {
 		log.Error().Err(err).Msg("Failed to unmarshal scrape request")
 		return err
 	}
 
-	switch req.Type {
-	case constants.ScrapeAllAction:
-		return s.ScrapeAll(ctx, req.ID)
-	case constants.ScrapeByIDAction:
-		if req.Payload.URLFrontierID == "" {
-			err := fmt.Errorf("URLFrontierID is required for action %s", req.Type)
-			log.Error().Err(err).Msg("Invalid scrape request")
+	// Use WithHeartbeat for long-running scraping operations
+	return s.BaseScraper.WithHeartbeat(ctx, message, func(ctx context.Context) error {
+		switch req.Type {
+		case constants.ScrapeAllAction:
+			return s.ScrapeAll(ctx, req.ID)
+		case constants.ScrapeByIDAction:
+			if req.Payload.URLFrontierID == "" {
+				err := fmt.Errorf("URLFrontierID is required for action %s", req.Type)
+				log.Error().Err(err).Msg("Invalid scrape request")
+				return err
+			}
+			return s.ScrapeByURLFrontierID(ctx, req.Payload.URLFrontierID, req.ID)
+		default:
+			err := fmt.Errorf("unsupported action type: %s", req.Type)
+			log.Error().Err(err).Msg("Unsupported scrape request")
 			return err
 		}
-		return s.ScrapeByURLFrontierID(ctx, req.Payload.URLFrontierID, req.ID)
-	default:
-		err := fmt.Errorf("unsupported action type: %s", req.Type)
-		log.Error().Err(err).Msg("Unsupported scrape request")
-		return err
-	}
+	}, 30*time.Second) // Send heartbeat every 30 seconds
 }
 
 func (s *IndonesiaSupremeCourtScraper) ScrapePage(ctx context.Context, page *rod.Page, url repository.UrlFrontier, jobID string) (repository.Extraction, error) {

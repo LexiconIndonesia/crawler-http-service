@@ -263,6 +263,19 @@ SET
 WHERE id = $1
 RETURNING id, status, created_at, updated_at, started_at, finished_at;
 
+-- Upsert job status (atomic insert or update)
+-- name: UpsertJobStatus :exec
+INSERT INTO jobs (
+    id,
+    status
+) VALUES (
+    $1, $2
+)
+ON CONFLICT (id) DO UPDATE
+SET
+    status = $2,
+    updated_at = NOW();
+
 -- Get job by ID
 -- name: GetJobByID :one
 SELECT id, status, created_at, updated_at, started_at, finished_at
