@@ -58,54 +58,6 @@ For production, sensitive data like passwords and credentials must be managed us
     docker secret create gcp_credentials /path/on/vps/to/your-gcp-key.json
     ```
 
-### c. Nginx Configuration
-
-The deployment includes an Nginx container that acts as a reverse proxy. It routes external traffic from port 80 to the application container. You need to create a `nginx.conf` file on your host in the `nginx` directory.
-
-A sample configuration is provided in `nginx/nginx.conf`. This basic setup is for HTTP. For production, you should extend it to handle HTTPS.
-
-### d. Generating the Initial SSL Certificate
-
-Before deploying the full stack, you must generate the initial SSL certificate using Certbot. This process requires a running Nginx container to solve the HTTP-01 challenge.
-
-1.  **Create a Temporary `docker-compose.yml`**:
-    Create a file named `docker-compose.certbot.yml` with only the Nginx service. This is to start Nginx independently.
-    ```yaml
-    version: '3.8'
-    services:
-      nginx:
-        image: "nginx:alpine"
-        ports:
-          - "80:80"
-        volumes:
-          - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-          - certbot-etc:/etc/letsencrypt
-          - certbot-var:/var/lib/letsencrypt
-          - web-root:/var/www/certbot
-    volumes:
-      certbot-etc:
-      certbot-var:
-      web-root:
-    ```
-
-2.  **Start Nginx**:
-    ```bash
-    docker-compose -f docker-compose.certbot.yml up -d
-    ```
-
-3.  **Run Certbot**:
-    Use `docker-compose run` to execute the Certbot command. Replace `your_email@example.com` with your email address.
-    ```bash
-    docker-compose -f docker-compose.prod.yml run --rm certbot certonly --webroot --webroot-path /var/www/certbot --email your_email@example.com --agree-tos --no-eff-email -d crawlers.lexicon.id
-    ```
-
-4.  **Shut Down the Temporary Nginx**:
-    ```bash
-    docker-compose -f docker-compose.certbot.yml down
-    ```
-
-Now that you have your certificates, you can proceed with the full deployment.
-
 ## 2. GitHub Repository Configuration
 
 The repository contains a pre-configured GitHub Actions workflow at `.github/workflows/docker-build-push.yml`. This workflow automates testing, building, and deploying the application. For it to function correctly, you need to configure a few settings in your repository.
@@ -132,6 +84,9 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 -   `VPS_SSH_KEY`: The **private** SSH key used to connect to your VPS.
 -   `VPS_PORT`: The SSH port for your VPS (usually `22`).
 
+-   `TRAEFIK_HOST`: Your domain name (e.g., `crawlers.lexicon.id`). Traefik will use this to route traffic and obtain SSL certificates.
+-   `TRAEFIK_ACME_EMAIL`: The email address for Let's Encrypt to send certificate notifications.
+
 -   `POSTGRES_DB_NAME`: The name for your PostgreSQL database (e.g., `crawlerdb`).
 -   `POSTGRES_USERNAME`: The username for the PostgreSQL database.
 -   `POSTGRES_PORT`: The port for PostgreSQL (e.g., `5432`).
@@ -142,7 +97,7 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 -   `NATS_USER`: The username for NATS (if any).
 -   `NATS_PASSWORD`: The password for NATS (if any).
 -   `NATS_PORT`: The port for NATS client connections (e.g., `4222`).
--   `NATS_PORT_MONITORING`: The port for NATS HTTP monitoring (e.g., `8222`).
+-   `NATS_MONITORING_PORT`: The port for NATS HTTP monitoring (e.g., `8222`).
 -   `REDIS_PORT`: The port for Redis (e.g., `6379`).
 
 ## 3. Triggering a Deployment
