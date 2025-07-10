@@ -28,7 +28,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: "postgres:16.2"
+    image: "postgres:17.5-alpine"
     ports:
       - ${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}
     environment:

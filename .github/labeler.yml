@@ -1,34 +1,40 @@
 # Add 'core' label to changes in main.go, server.go, or config.go
 core:
   - changed-files:
-    - any-glob-to-any-file: [main.go, server.go, config.go]
+      - any-glob-to-any-file: [main.go, server.go, config.go]
 
 # Add 'documentation' label to changes in docs or README
 documentation:
   - changed-files:
-    - any-glob-to-any-file: ['docs/**/*', README.md]
+      - any-glob-to-any-file: ["docs/**/*", README.md]
 
 # Add 'docker' label to changes in Dockerfile or docker-compose.yml
 docker:
   - changed-files:
-    - any-glob-to-any-file: [Dockerfile, docker-compose.yml, dev.Dockerfile, .dockerignore]
+      - any-glob-to-any-file:
+          [Dockerfile, docker-compose.yml, dev.Dockerfile, .dockerignore]
 
 # Add 'github-actions' label to changes in .github directory
 github-actions:
   - changed-files:
-    - any-glob-to-any-file: [.github/**/*]
+      - any-glob-to-any-file: [.github/**/*]
 
 # Add 'migrations' label to changes in migrations directory
 migrations:
   - changed-files:
-    - any-glob-to-any-file: [migrations/**/*]
+      - any-glob-to-any-file: [migrations/**/*]
 
 # Add 'repository' label to changes in repository directory
 repository:
   - changed-files:
-    - any-glob-to-any-file: [repository/**/*]
+      - any-glob-to-any-file: [repository/**/*]
 
 # Add 'module' label to changes in module directory
 module:
   - changed-files:
-    - any-glob-to-any-file: [module/**/*]
+      - any-glob-to-any-file: [module/**/*]
+
+# Add 'scripts' label to changes in scripts directory
+scripts:
+  - changed-files:
+      - any-glob-to-any-file: [scripts/**/*]

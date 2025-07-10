@@ -294,14 +294,14 @@ else
             print_success "SSL certificate generated successfully!"
         else
             print_error "Failed to generate SSL certificate."
-            docker compose -f docker-compose.certbot.yml down
+            docker compose -f docker-compose.certbot.yml down || true
             rm -f docker-compose.certbot.yml
             exit 1
         fi
 
         # Stop temporary Nginx
         print_info "Stopping temporary Nginx..."
-        docker compose -f docker-compose.certbot.yml down
+        docker compose -f docker-compose.certbot.yml down || true
         print_success "Temporary Nginx stopped!"
     else
         print_error "Failed to start temporary Nginx."

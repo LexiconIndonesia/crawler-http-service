@@ -1,38 +1,45 @@
 version: "3.8"
 
 services:
-  nginx:
-    image: "nginx:alpine"
+  traefik:
+    image: "traefik:v3.0"
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=${TRAEFIK_ACME_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - certbot-etc:/etc/letsencrypt
-      - certbot-var:/var/lib/letsencrypt
-    depends_on:
-      - app
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "traefik-letsencrypt:/letsencrypt"
     networks:
       - app-network
     deploy:
       restart_policy:
         condition: any
 
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - certbot-etc:/etc/letsencrypt
-      - certbot-var:/var/lib/letsencrypt
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-
   app:
     # The 'build' section is removed for stack deployment.
     # Instead, we specify the pre-built image from a registry.
     # IMPORTANT: Replace YOUR_GITHUB_USERNAME with your GitHub username or organization.
-    image: ghcr.io/YOUR_GITHUB_USERNAME/crawler-http-service:latest
+    image: ghcr.io/LexiconIndonesia/crawler-http-service:latest
     # The app port is no longer exposed to the host.
     # ports:
     #   - ${LISTEN_PORT:-8080}:${LISTEN_PORT:-8080}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.app.rule=Host(`${TRAEFIK_HOST}`)"
+      - "traefik.http.routers.app.entrypoints=websecure"
+      - "traefik.http.routers.app.tls.certresolver=myresolver"
+      - "traefik.http.services.app.loadbalancer.server.port=${LISTEN_PORT:-8080}"
     depends_on:
       - postgres
       - nats
@@ -60,9 +67,7 @@ services:
         condition: any
 
   postgres:
-    image: "postgres:16.2"
-    ports:
-      - ${POSTGRES_PORT:-5432}:${POSTGRES_PORT:-5432}
+    image: "postgres:17.5-alpine"
     environment:
       # Passwords are now handled securely via Docker Secrets.
       POSTGRES_DATABASE: "${POSTGRES_DB_NAME}"
@@ -115,9 +120,7 @@ volumes:
     driver: local
   app-redis:
     driver: local
-  certbot-etc:
-    driver: local
-  certbot-var:
+  traefik-letsencrypt:
     driver: local
 
 # Define the secrets, which are expected to exist in the Docker Swarm.
