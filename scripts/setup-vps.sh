@@ -95,8 +95,8 @@ if ! command_exists docker; then
     exit 1
 fi
 
-if ! command_exists docker-compose; then
-    print_error "Docker Compose is not installed. Please install Docker Compose first."
+if ! docker compose version >/dev/null 2>&1; then
+    print_error "Docker Compose is not available. Please make sure it's installed as a Docker plugin."
     print_info "Visit: https://docs.docker.com/compose/install/"
     exit 1
 fi
@@ -275,7 +275,7 @@ else
     print_info "Starting temporary Nginx for certificate generation..."
 
     # Start temporary Nginx
-    if docker-compose -f docker-compose.certbot.yml up -d; then
+    if docker compose -f docker-compose.certbot.yml up -d; then
         print_success "Temporary Nginx started!"
 
         # Wait a moment for Nginx to be ready
@@ -284,7 +284,7 @@ else
         # Generate SSL certificate
         print_info "Generating SSL certificate for $DOMAIN..."
 
-        if docker-compose -f docker-compose.prod.yml run --rm certbot certonly \
+        if docker compose -f docker-compose.prod.yml run --rm certbot certonly \
             --webroot \
             --webroot-path /var/www/certbot \
             --email "$EMAIL" \
@@ -294,14 +294,14 @@ else
             print_success "SSL certificate generated successfully!"
         else
             print_error "Failed to generate SSL certificate."
-            docker-compose -f docker-compose.certbot.yml down
+            docker compose -f docker-compose.certbot.yml down
             rm -f docker-compose.certbot.yml
             exit 1
         fi
 
         # Stop temporary Nginx
         print_info "Stopping temporary Nginx..."
-        docker-compose -f docker-compose.certbot.yml down
+        docker compose -f docker-compose.certbot.yml down
         print_success "Temporary Nginx stopped!"
     else
         print_error "Failed to start temporary Nginx."
@@ -316,7 +316,7 @@ rm -f docker-compose.certbot.yml
 # Create a cron job for certificate renewal
 print_info "\nSetting up automatic certificate renewal..."
 
-CRON_JOB="0 3 * * 0 cd $(pwd) && docker-compose -f docker-compose.prod.yml run --rm certbot renew --quiet && docker service update --force crawler_stack_nginx"
+CRON_JOB="0 3 * * 0 cd $(pwd) && docker compose -f docker-compose.prod.yml run --rm certbot renew --quiet && docker service update --force crawler_stack_nginx"
 
 # Check if cron job already exists
 if crontab -l 2>/dev/null | grep -F "$CRON_JOB" >/dev/null; then
