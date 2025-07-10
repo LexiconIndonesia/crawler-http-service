@@ -58,9 +58,7 @@ func (r *UrlFrontierRepository) CreateBatch(ctx context.Context, frontiers []rep
 	// Note: This is a simplified approach; in a real implementation,
 	// you might want to fetch all the created frontiers
 	result := make([]repository.UrlFrontier, len(frontiers))
-	for i, frontier := range frontiers {
-		result[i] = frontier
-	}
+	copy(result, frontiers)
 
 	return result, nil
 }

@@ -82,7 +82,7 @@ func SimpleTask(
 	execute func(ctx context.Context) error,
 	options ...TaskOption[struct{}],
 ) (Executor[struct{}], error) {
-	return NewTask[struct{}](
+	return NewTask(
 		func(ctx context.Context) (struct{}, error) {
 			err := execute(ctx)
 			return struct{}{}, err

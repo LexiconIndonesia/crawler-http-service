@@ -377,7 +377,16 @@ func (p *Pool[T]) executeTask(ctx context.Context, task Executor[T], workerID in
 			return
 		}
 		// Use a separate context for cleanup in case the task context is cancelled.
-		defer p.workManager.Complete(context.Background(), taskID)
+		defer func() {
+			if err := p.workManager.Complete(context.Background(), taskID); err != nil {
+				log.Warn().
+					Str("workerPoolID", poolID).
+					Int("workerID", workerID).
+					Str("taskID", taskID).
+					Err(err).
+					Msg("Failed to complete work in WorkManager")
+			}
+		}()
 	}
 
 	startTime := time.Now()

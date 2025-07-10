@@ -116,7 +116,9 @@ func (s *AppHttpServer) setupRoute() {
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"healthy","service":"crawler-http-service"}`))
+		if _, err := w.Write([]byte(`{"status":"healthy","service":"crawler-http-service"}`)); err != nil {
+			log.Error().Err(err).Msg("Failed to write health check response")
+		}
 	})
 
 	r.Route("/v1", func(r chi.Router) {
