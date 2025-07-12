@@ -58,10 +58,18 @@ services:
       - GCS_STORAGE_BUCKET=${GCS_STORAGE_BUCKET:-lexicon-bo-bucket}
       # The GCP credentials are now mounted as a Docker Secret.
       - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_credentials
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+      - NATS_USER=${NATS_USER}
+      - NATS_PASSWORD_FILE=/run/secrets/nats_password
+      - REDIS_PASSWORD_FILE=/run/secrets/redis_password
     networks:
       - app-network
     secrets:
       - gcp_credentials
+      - postgres_password
+      - nats_user
+      - nats_password
+      - redis_password
     deploy:
       restart_policy:
         condition: any
@@ -88,23 +96,30 @@ services:
     ports:
       - "${NATS_PORT:-4222}:4222" # Client connections
       - "${NATS_MONITORING_PORT:-8222}:8222" # HTTP monitoring
-    command: "-js -m 8222 --jetstream ${NATS_ADDITIONAL_ARGS:-}"
+    command: >
+      sh -c "nats-server -js -m 8222 --jetstream --user $$(cat /run/secrets/nats_user) --pass $$(cat /run/secrets/nats_password)"
     volumes:
       - "app-nats-data:/data"
     networks:
       - app-network
+    secrets:
+      - nats_user
+      - nats_password
     deploy:
       restart_policy:
         condition: any
 
   redis:
     image: "eqalpha/keydb:latest"
+    command: "keydb-server /etc/keydb/keydb.conf --requirepass-file /run/secrets/redis_password"
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
       - "app-redis:/data"
     networks:
       - app-network
+    secrets:
+      - redis_password
     deploy:
       restart_policy:
         condition: any
@@ -128,4 +143,10 @@ secrets:
   postgres_password:
     external: true
   gcp_credentials:
+    external: true
+  nats_user:
+    external: true
+  nats_password:
+    external: true
+  redis_password:
     external: true

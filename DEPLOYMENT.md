@@ -95,7 +95,6 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 -   `GCS_STORAGE_BUCKET`: The name of your Google Cloud Storage bucket.
 
 -   `NATS_USER`: The username for NATS (if any).
--   `NATS_PASSWORD`: The password for NATS (if any).
 -   `NATS_PORT`: The port for NATS client connections (e.g., `4222`).
 -   `NATS_MONITORING_PORT`: The port for NATS HTTP monitoring (e.g., `8222`).
 -   `REDIS_PORT`: The port for Redis (e.g., `6379`).

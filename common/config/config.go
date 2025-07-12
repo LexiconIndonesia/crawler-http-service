@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -14,6 +15,20 @@ func getEnv(key, defaultValue string) string {
 		return defaultValue
 	}
 	return value
+}
+
+// get secret from file, or fallback to env
+func getSecret(key string) string {
+	value, exists := os.LookupEnv(key + "_FILE")
+	if exists {
+		// trim space and newline
+		secret, err := os.ReadFile(value)
+		if err == nil {
+			return strings.TrimSpace(string(secret))
+		}
+	}
+
+	return getEnv(key, "")
 }
 
 func loadEnvString(key string, result *string) {
@@ -71,7 +86,7 @@ func (p *pgSqlConfig) loadFromEnv() {
 	loadEnvString("POSTGRES_DB_NAME", &p.Database)
 	loadEnvString("POSTGRES_SSLMODE", &p.SslMode)
 	loadEnvString("POSTGRES_USERNAME", &p.User)
-	loadEnvString("POSTGRES_PASSWORD", &p.Password)
+	p.Password = getSecret("POSTGRES_PASSWORD")
 }
 
 /* Listen Configuration */
@@ -135,7 +150,7 @@ func (c *natsConfig) loadFromEnv() {
 	}
 
 	c.Username = getEnv("NATS_USER", "")
-	c.Password = getEnv("NATS_PASSWORD", "")
+	c.Password = getSecret("NATS_PASSWORD")
 
 	// Load JetStream enabled flag
 	if jsEnabled := getEnv("NATS_JETSTREAM_ENABLED", "true"); jsEnabled == "true" {
@@ -198,7 +213,7 @@ type redisConfig struct {
 func (r *redisConfig) loadFromEnv() {
 	loadEnvString("REDIS_HOST", &r.Host)
 	loadEnvUint("REDIS_PORT", &r.Port)
-	loadEnvString("REDIS_PASSWORD", &r.Password)
+	r.Password = getSecret("REDIS_PASSWORD")
 
 	// Load DB number with a default of 0
 	if dbStr := getEnv("REDIS_DB", "0"); dbStr != "" {

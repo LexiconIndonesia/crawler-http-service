@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/LexiconIndonesia/crawler-http-service/common/config"
 	"github.com/LexiconIndonesia/crawler-http-service/common/db"
+	"github.com/LexiconIndonesia/crawler-http-service/common/models"
 	"github.com/LexiconIndonesia/crawler-http-service/common/utils"
 	"github.com/LexiconIndonesia/crawler-http-service/common/work"
 	"github.com/LexiconIndonesia/crawler-http-service/repository"
@@ -105,14 +107,27 @@ func (h *WorkManagerHandler) handleGetWork(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	type WorkDetail struct {
-		Job  repository.Job          `json:"job"`
-		Logs []repository.CrawlerLog `json:"logs"`
+	responseLogs := make([]models.CrawlerLogResponse, len(logs))
+	for i, log := range logs {
+		var details interface{}
+		if err := json.Unmarshal(log.Details, &details); err != nil {
+			details = string(log.Details)
+		}
+
+		responseLogs[i] = models.CrawlerLogResponse{
+			ID:           log.ID,
+			DataSourceID: log.DataSourceID,
+			JobID:        log.JobID,
+			EventType:    log.EventType,
+			Message:      log.Message,
+			Details:      details,
+			CreatedAt:    log.CreatedAt,
+		}
 	}
 
-	detail := WorkDetail{
+	detail := models.WorkDetailResponse{
 		Job:  job,
-		Logs: logs,
+		Logs: responseLogs,
 	}
 
 	utils.WriteJSON(w, http.StatusOK, detail)

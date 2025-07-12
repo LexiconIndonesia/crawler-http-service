@@ -109,6 +109,11 @@ print_info "\nCollecting configuration..."
 
 prompt_input "Enter PostgreSQL password" POSTGRES_PASSWORD "" true
 prompt_input "Enter path to GCP service account JSON file" GCP_KEY_PATH
+prompt_input "Enter your domain name (e.g., crawlers.lexicon.id)" DOMAIN validate_domain
+prompt_input "Enter your email address for SSL certificate" EMAIL validate_email
+prompt_input "Enter NATS user" NATS_USER
+prompt_input "Enter NATS password" NATS_PASSWORD "" true
+prompt_input "Enter Redis password" REDIS_PASSWORD "" true
 
 # Verify GCP key file exists
 if [ ! -f "$GCP_KEY_PATH" ]; then
@@ -129,6 +134,42 @@ else
         print_success "PostgreSQL password secret created!"
     else
         print_error "Failed to create PostgreSQL password secret."
+        exit 1
+    fi
+fi
+
+# Create NATS user secret
+if docker secret ls --format "{{.Name}}" | grep -q "^nats_user$"; then
+    print_warning "nats_user secret already exists. Skipping..."
+else
+    if echo "$NATS_USER" | docker secret create nats_user -; then
+        print_success "NATS user secret created!"
+    else
+        print_error "Failed to create NATS user secret."
+        exit 1
+    fi
+fi
+
+# Create NATS password secret
+if docker secret ls --format "{{.Name}}" | grep -q "^nats_password$"; then
+    print_warning "nats_password secret already exists. Skipping..."
+else
+    if echo "$NATS_PASSWORD" | docker secret create nats_password -; then
+        print_success "NATS password secret created!"
+    else
+        print_error "Failed to create NATS password secret."
+        exit 1
+    fi
+fi
+
+# Create Redis password secret
+if docker secret ls --format "{{.Name}}" | grep -q "^redis_password$"; then
+    print_warning "redis_password secret already exists. Skipping..."
+else
+    if echo "$REDIS_PASSWORD" | docker secret create redis_password -; then
+        print_success "Redis password secret created!"
+    else
+        print_error "Failed to create Redis password secret."
         exit 1
     fi
 fi
@@ -154,6 +195,9 @@ print_info "   - postgres_password"
 print_info "   - gcp_credentials"
 print_info "✅ Traefik is now ready to be deployed as a reverse proxy."
 print_info "✅ SSL certificates will be automatically handled by Traefik."
+print_info "   - nats_user"
+print_info "   - nats_password"
+print_info "   - redis_password"
 print_info ""
 print_info "Next steps:"
 print_info "1. Configure your GitHub repository secrets. Make sure to set:"
