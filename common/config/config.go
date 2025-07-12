@@ -117,10 +117,7 @@ type hostConfig struct {
 }
 
 func (h *hostConfig) loadFromEnv() {
-	loadEnvString("APP_URL", &h.Host)
-	if h.Host == "" {
-		loadEnvString("HOST", &h.Host)
-	}
+	loadEnvString("HOST", &h.Host)
 }
 
 func defaultHostConfig() hostConfig {

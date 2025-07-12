@@ -142,22 +142,23 @@ ssh <your_username>@<your_vps_host>
 Navigate to your application directory and update the `.env.prod` file with the new version tag. This file should already exist if you have deployed before.
 ```bash
 cd /srv/crawler-http-service
-sed -i "s/IMAGE_NAME=.*/IMAGE_NAME=ghcr.io\/LexiconIndonesia\/crawler-http-service:v1.0.1/g" .env.prod
+sed -i "s/IMAGE_NAME=.*/IMAGE_NAME=ghcr.io\/LexiconIndonesia\/crawler-http-service:<your_new_version_tag>/g" .env.prod
 ```
-**Note**: Replace `v1.0.1` with the actual version you are deploying.
+**Note**: Replace `<your_new_version_tag>` with the actual version you are deploying.
 
 ### c. Log in to the GitHub Container Registry
 To pull the private image, you must log in to `ghcr.io` on your server. It is recommended to use a [Personal Access Token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with `read:packages` scope as your password.
 
+Run the following command. When prompted for a password, paste your PAT. This is more secure because it prevents the token from being saved in your shell's history.
 ```bash
-echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+docker login ghcr.io -u YOUR_GITHUB_USERNAME
 ```
 
 ### d. Deploy the Stack
 With the new image tag set, pull the image and redeploy the stack. Docker Swarm will perform a rolling update with zero downtime.
 ```bash
 # Pull the new image specified in .env.prod
-docker-compose -f docker-compose.prod.yml config | docker-compose -f docker-compose.prod.yml pull
+docker-compose -f docker-compose.prod.yml pull
 
 # Redeploy the stack
 docker stack deploy --compose-file docker-compose.prod.yml --with-registry-auth crawler_stack
