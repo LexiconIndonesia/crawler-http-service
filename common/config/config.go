@@ -149,7 +149,7 @@ func (c *natsConfig) loadFromEnv() {
 		c.Port = 4222
 	}
 
-	c.Username = getEnv("NATS_USER", "")
+	c.Username = getSecret("NATS_USER")
 	c.Password = getSecret("NATS_PASSWORD")
 
 	// Load JetStream enabled flag

@@ -49,8 +49,6 @@ services:
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
       - NATS_HOST=nats
       - NATS_PORT=${NATS_PORT:-4222}
-      - NATS_USER=${NATS_USER:-}
-      - NATS_PASSWORD=${NATS_PASSWORD:-}
       - NATS_JETSTREAM_ENABLED=${NATS_JETSTREAM_ENABLED:-true}
       - NATS_PORT_MONITORING=${NATS_PORT_MONITORING:-8222}
       - REDIS_HOST=redis
@@ -59,7 +57,7 @@ services:
       # The GCP credentials are now mounted as a Docker Secret.
       - GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_credentials
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
-      - NATS_USER=${NATS_USER}
+      - NATS_USER_FILE=/run/secrets/nats_user
       - NATS_PASSWORD_FILE=/run/secrets/nats_password
       - REDIS_PASSWORD_FILE=/run/secrets/redis_password
     networks:

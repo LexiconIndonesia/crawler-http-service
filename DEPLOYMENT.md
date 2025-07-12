@@ -58,6 +58,19 @@ For production, sensitive data like passwords and credentials must be managed us
     docker secret create gcp_credentials /path/on/vps/to/your-gcp-key.json
     ```
 
+3.  **NATS Credentials**:
+    Replace `your_nats_user` and `your_strong_nats_password` with your desired credentials.
+    ```bash
+    echo "your_nats_user" | docker secret create nats_user -
+    echo "your_strong_nats_password" | docker secret create nats_password -
+    ```
+
+4.  **Redis Password**:
+    Replace `your_strong_redis_password` with the password you want to use.
+    ```bash
+    echo "your_strong_redis_password" | docker secret create redis_password -
+    ```
+
 ## 2. GitHub Repository Configuration
 
 The repository contains a pre-configured GitHub Actions workflow at `.github/workflows/docker-build-push.yml`. This workflow automates testing, building, and deploying the application. For it to function correctly, you need to configure a few settings in your repository.
@@ -94,7 +107,6 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 -   `LISTEN_PORT`: The port the application will listen on (e.g., `8080`). This is not exposed publicly but is used for Nginx to route requests to the app.
 -   `GCS_STORAGE_BUCKET`: The name of your Google Cloud Storage bucket.
 
--   `NATS_USER`: The username for NATS (if any).
 -   `NATS_PORT`: The port for NATS client connections (e.g., `4222`).
 -   `NATS_MONITORING_PORT`: The port for NATS HTTP monitoring (e.g., `8222`).
 -   `REDIS_PORT`: The port for Redis (e.g., `6379`).

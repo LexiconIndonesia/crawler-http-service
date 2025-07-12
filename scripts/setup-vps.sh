@@ -31,6 +31,14 @@ command_exists() {
     command -v "$1" >/dev/null 2>&1
 }
 
+validate_domain() {
+    [[ "$1" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]
+}
+
+validate_email() {
+    [[ "$1" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]
+}
+
 # Function to prompt for input with validation
 prompt_input() {
     local prompt="$1"
@@ -189,25 +197,23 @@ fi
 # Final summary
 print_success "\n🎉 VPS Setup Complete!"
 print_info "=============================="
-print_info "✅ Docker Swarm initialized"
-print_info "✅ Docker secrets created:"
+print_info "✅ Docker Swarm initialized."
+print_info "✅ The following Docker secrets have been created:"
 print_info "   - postgres_password"
 print_info "   - gcp_credentials"
-print_info "✅ Traefik is now ready to be deployed as a reverse proxy."
-print_info "✅ SSL certificates will be automatically handled by Traefik."
 print_info "   - nats_user"
 print_info "   - nats_password"
 print_info "   - redis_password"
 print_info ""
 print_info "Next steps:"
 print_info "1. Configure your GitHub repository secrets. Make sure to set:"
-print_info "   - TRAEFIK_HOST (your domain name)"
-print_info "   - TRAEFIK_ACME_EMAIL (your email for Let's Encrypt)"
-print_info "2. Push a tag to trigger deployment"
-print_info "3. Monitor deployment in GitHub Actions"
+print_info "   - TRAEFIK_HOST (your domain name: $DOMAIN)"
+print_info "   - TRAEFIK_ACME_EMAIL (your email for Let's Encrypt: $EMAIL)"
+print_info "2. Push a tag to trigger deployment."
+print_info "3. Monitor deployment in GitHub Actions."
 print_info ""
 print_info "You can verify the setup with:"
 print_info "  docker secret ls"
 print_info "  docker node ls"
 print_info ""
-print_warning "Make sure your domain (TRAEFIK_HOST) points to this server's IP address!"
+print_warning "Make sure your domain ($DOMAIN) points to this server's IP address!"
