@@ -58,53 +58,18 @@ For production, sensitive data like passwords and credentials must be managed us
     docker secret create gcp_credentials /path/on/vps/to/your-gcp-key.json
     ```
 
-### c. Nginx Configuration
-
-The deployment includes an Nginx container that acts as a reverse proxy. It routes external traffic from port 80 to the application container. You need to create a `nginx.conf` file on your host in the `nginx` directory.
-
-A sample configuration is provided in `nginx/nginx.conf`. This basic setup is for HTTP. For production, you should extend it to handle HTTPS.
-
-### d. Generating the Initial SSL Certificate
-
-Before deploying the full stack, you must generate the initial SSL certificate using Certbot. This process requires a running Nginx container to solve the HTTP-01 challenge.
-
-1.  **Create a Temporary `docker-compose.yml`**:
-    Create a file named `docker-compose.certbot.yml` with only the Nginx service. This is to start Nginx independently.
-    ```yaml
-    version: '3.8'
-    services:
-      nginx:
-        image: "nginx:alpine"
-        ports:
-          - "80:80"
-        volumes:
-          - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-          - certbot-etc:/etc/letsencrypt
-          - certbot-var:/var/lib/letsencrypt
-          - web-root:/var/www/certbot
-    volumes:
-      certbot-etc:
-      certbot-var:
-      web-root:
-    ```
-
-2.  **Start Nginx**:
+3.  **NATS Credentials**:
+    Replace `your_nats_user` and `your_strong_nats_password` with your desired credentials.
     ```bash
-    docker-compose -f docker-compose.certbot.yml up -d
+    echo "your_nats_user" | docker secret create nats_user -
+    echo "your_strong_nats_password" | docker secret create nats_password -
     ```
 
-3.  **Run Certbot**:
-    Use `docker-compose run` to execute the Certbot command. Replace `your_email@example.com` with your email address.
+4.  **Redis Password**:
+    Replace `your_strong_redis_password` with the password you want to use.
     ```bash
-    docker-compose -f docker-compose.prod.yml run --rm certbot certonly --webroot --webroot-path /var/www/certbot --email your_email@example.com --agree-tos --no-eff-email -d crawlers.lexicon.id
+    echo "your_strong_redis_password" | docker secret create redis_password -
     ```
-
-4.  **Shut Down the Temporary Nginx**:
-    ```bash
-    docker-compose -f docker-compose.certbot.yml down
-    ```
-
-Now that you have your certificates, you can proceed with the full deployment.
 
 ## 2. GitHub Repository Configuration
 
@@ -132,6 +97,9 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 -   `VPS_SSH_KEY`: The **private** SSH key used to connect to your VPS.
 -   `VPS_PORT`: The SSH port for your VPS (usually `22`).
 
+-   `TRAEFIK_HOST`: Your domain name (e.g., `crawlers.lexicon.id`). Traefik will use this to route traffic and obtain SSL certificates.
+-   `TRAEFIK_ACME_EMAIL`: The email address for Let's Encrypt to send certificate notifications.
+
 -   `POSTGRES_DB_NAME`: The name for your PostgreSQL database (e.g., `crawlerdb`).
 -   `POSTGRES_USERNAME`: The username for the PostgreSQL database.
 -   `POSTGRES_PORT`: The port for PostgreSQL (e.g., `5432`).
@@ -139,9 +107,8 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 -   `LISTEN_PORT`: The port the application will listen on (e.g., `8080`). This is not exposed publicly but is used for Nginx to route requests to the app.
 -   `GCS_STORAGE_BUCKET`: The name of your Google Cloud Storage bucket.
 
--   `NATS_USER`: The username for NATS (if any).
 -   `NATS_PORT`: The port for NATS client connections (e.g., `4222`).
--   `NATS_PORT_MONITORING`: The port for NATS HTTP monitoring (e.g., `8222`).
+-   `NATS_MONITORING_PORT`: The port for NATS HTTP monitoring (e.g., `8222`).
 -   `REDIS_PORT`: The port for Redis (e.g., `6379`).
 
 ## 3. Triggering a Deployment
@@ -169,7 +136,7 @@ Once the workflow is complete, you can check the status of your deployed service
 docker stack services crawler_stack
 ```
 
-You should see all services (`nginx`, `app`, `postgres`, `nats`, `redis`, `certbot`) with `1/1` in the `REPLICAS` column. It might take a minute for all containers to download and start.
+You should see all services (`traefik`, `app`, `postgres`, `nats`, `redis`) with `1/1` in the `REPLICAS` column. It might take a minute for all containers to download and start.
 
 View the logs for a specific service:
 
