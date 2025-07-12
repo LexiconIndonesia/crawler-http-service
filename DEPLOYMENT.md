@@ -136,7 +136,7 @@ Once the workflow is complete, you can check the status of your deployed service
 docker stack services crawler_stack
 ```
 
-You should see all services (`nginx`, `app`, `postgres`, `nats`, `redis`, `certbot`) with `1/1` in the `REPLICAS` column. It might take a minute for all containers to download and start.
+You should see all services (`traefik`, `app`, `postgres`, `nats`, `redis`) with `1/1` in the `REPLICAS` column. It might take a minute for all containers to download and start.
 
 View the logs for a specific service:
 
