@@ -104,39 +104,74 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 -   `POSTGRES_USERNAME`: The username for the PostgreSQL database.
 -   `POSTGRES_PORT`: The port for PostgreSQL (e.g., `5432`).
 
--   `LISTEN_PORT`: The port the application will listen on (e.g., `8080`). This is not exposed publicly but is used for Nginx to route requests to the app.
+-   `LISTEN_PORT`: The port the application will listen on (e.g., `8080`). This is not exposed publicly but is used by Traefik to route requests to the app.
 -   `GCS_STORAGE_BUCKET`: The name of your Google Cloud Storage bucket.
 
 -   `NATS_PORT`: The port for NATS client connections (e.g., `4222`).
 -   `NATS_MONITORING_PORT`: The port for NATS HTTP monitoring (e.g., `8222`).
 -   `REDIS_PORT`: The port for Redis (e.g., `6379`).
 
-## 3. Triggering a Deployment
+## 3. Publishing a New Version
 
-The workflow is configured to run automatically whenever you push a new Git tag that follows a semantic versioning pattern (e.g., `v1.0.0`, `v1.2.3`).
+The workflow is configured to automatically build and publish a new Docker image whenever you push a Git tag that follows a semantic versioning pattern (e.g., `v1.0.0`, `v1.2.3`).
 
-To deploy a new version of your application:
+To publish a new version of your application:
 1.  Commit your changes to the `main` branch.
 2.  Create a new tag.
     ```bash
     git tag v1.0.1
     ```
-3.  Push the tag to GitHub. This will trigger the deployment workflow.
+3.  Push the tag to GitHub. This will trigger the build-and-publish workflow.
     ```bash
     git push origin v1.0.1
     ```
 
-You can monitor the progress of your deployment in the "Actions" tab of your GitHub repository.
+You can monitor the progress of your build in the "Actions" tab of your GitHub repository.
 
-## 4. Verify the Deployment
+## 4. Manual Deployment to VPS
 
-Once the workflow is complete, you can check the status of your deployed services:
+After a new image has been successfully published to the GitHub Container Registry, you can deploy it to your server by following these steps.
+
+### a. Connect to Your VPS
+Connect to your server using SSH.
+```bash
+ssh <your_username>@<your_vps_host>
+```
+
+### b. Update the Image Tag
+Navigate to your application directory and update the `.env.prod` file with the new version tag. This file should already exist if you have deployed before.
+```bash
+cd /srv/crawler-http-service
+sed -i "s/IMAGE_NAME=.*/IMAGE_NAME=ghcr.io\/LexiconIndonesia\/crawler-http-service:v1.0.1/g" .env.prod
+```
+**Note**: Replace `v1.0.1` with the actual version you are deploying.
+
+### c. Log in to the GitHub Container Registry
+To pull the private image, you must log in to `ghcr.io` on your server. It is recommended to use a [Personal Access Token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with `read:packages` scope as your password.
+
+```bash
+echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+
+### d. Deploy the Stack
+With the new image tag set, pull the image and redeploy the stack. Docker Swarm will perform a rolling update with zero downtime.
+```bash
+# Pull the new image specified in .env.prod
+docker-compose -f docker-compose.prod.yml config | docker-compose -f docker-compose.prod.yml pull
+
+# Redeploy the stack
+docker stack deploy --compose-file docker-compose.prod.yml --with-registry-auth crawler_stack
+```
+
+## 5. Verify the Deployment
+
+Once the deployment command is complete, you can check the status of your services:
 
 ```bash
 docker stack services crawler_stack
 ```
 
-You should see all services (`traefik`, `app`, `postgres`, `nats`, `redis`) with `1/1` in the `REPLICAS` column. It might take a minute for all containers to download and start.
+You should see all services (`traefik`, `app`, `postgres`, `nats`, `redis`) with `1/1` in the `REPLICAS` column. It might take a minute for all containers to download and restart.
 
 View the logs for a specific service:
 
@@ -144,11 +179,11 @@ View the logs for a specific service:
 docker service logs crawler_stack_app -f
 ```
 
-## 5. Managing the Application
+## 6. Managing the Application
 
 ### Updating the Application
 
-To update your application, simply push a new tag as described in the "Triggering a Deployment" section. The workflow will handle building the new image and updating the services.
+To update your application, publish a new version by pushing a tag, then follow the manual deployment steps.
 
 ### Stopping the Stack
 
