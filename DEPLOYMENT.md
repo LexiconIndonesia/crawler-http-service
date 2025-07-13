@@ -148,7 +148,7 @@ Cloning the repository is straightforward and ensures you have all necessary fil
 
 ```bash
 # Clone your repository
-git clone https://github.com/your-username/your-repo.git
+git clone https://github.com/LexiconIndonesia/crawler-http-service.git
 
 # Navigate into the project directory
 cd your-repo
