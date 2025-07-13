@@ -188,7 +188,7 @@ docker compose -f docker-compose.prod.yml pull app
 
 # Redeploy the stack, passing the IMAGE_TAG to the compose file.
 # The --with-registry-auth flag is crucial for allowing swarm nodes to pull private images.
-IMAGE_TAG=$IMAGE_TAG docker stack deploy --compose-file docker-compose.prod.yml --with-registry-auth crawler_stack
+docker stack deploy --compose-file docker-compose.prod.yml --with-registry-auth crawler_stack
 ```
 
 ## 5. Verify the Deployment
