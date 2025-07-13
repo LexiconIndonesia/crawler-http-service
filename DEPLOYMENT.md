@@ -138,13 +138,13 @@ Connect to your server using SSH.
 ssh <your_username>@<your_vps_host>
 ```
 
-### b. Update the Image Tag
-Navigate to your application directory and update the `.env.prod` file with the new version tag. This file should already exist if you have deployed before.
+### b. Set the Image Tag
+Before deploying, set the `IMAGE_TAG` environment variable to the version you want to deploy. This ensures that the subsequent commands pull and deploy the correct image.
+
 ```bash
-cd /srv/crawler-http-service
-sed -i "s/IMAGE_NAME=.*/IMAGE_NAME=ghcr.io\/LexiconIndonesia\/crawler-http-service:<your_new_version_tag>/g" .env.prod
+export IMAGE_TAG=<your_new_version_tag>
 ```
-**Note**: Replace `<your_new_version_tag>` with the actual version you are deploying.
+**Note**: Replace `<your_new_version_tag>` with the actual version you are deploying (e.g., `v1.0.1`).
 
 ### c. Log in to the GitHub Container Registry
 To pull the private image, you must log in to `ghcr.io` on your server. It is recommended to use a [Personal Access Token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with `read:packages` scope as your password.
@@ -155,13 +155,15 @@ docker login ghcr.io -u YOUR_GITHUB_USERNAME
 ```
 
 ### d. Deploy the Stack
-With the new image tag set, pull the image and redeploy the stack. Docker Swarm will perform a rolling update with zero downtime.
-```bash
-# Pull the new image specified in .env.prod
-docker-compose -f docker-compose.prod.yml pull
+With the `IMAGE_TAG` variable set, pull the new image and redeploy the stack. Docker Swarm will perform a rolling update with zero downtime.
 
-# Redeploy the stack
-docker stack deploy --compose-file docker-compose.prod.yml --with-registry-auth crawler_stack
+```bash
+# Pull the new image specified by the IMAGE_TAG environment variable
+docker compose -f docker compose.prod.yml pull app
+
+# Redeploy the stack, passing the IMAGE_TAG to the compose file.
+# The --with-registry-auth flag is crucial for allowing swarm nodes to pull private images.
+IMAGE_TAG=$IMAGE_TAG docker stack deploy --compose-file docker compose.prod.yml --with-registry-auth crawler_stack
 ```
 
 ## 5. Verify the Deployment

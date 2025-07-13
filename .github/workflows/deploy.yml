@@ -11,8 +11,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image_name: ${{ steps.meta.outputs.tags }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -65,7 +63,7 @@ jobs:
           echo "NATS_MONITORING_PORT=${{ secrets.NATS_PORT_MONITORING || '8222' }}" >> .env.prod
           echo "REDIS_PORT=${{ secrets.REDIS_PORT || '6379' }}" >> .env.prod
           echo "GCS_STORAGE_BUCKET=${{ secrets.GCS_STORAGE_BUCKET }}" >> .env.prod
-          echo "IMAGE_NAME=${{ needs.build_and_push.outputs.image_name }}" >> .env.prod
+          echo "IMAGE_TAG=${{ github.ref_name }}" >> .env.prod
 
       - name: Setup deployment directory on VPS
         uses: appleboy/ssh-action@master
@@ -100,8 +98,8 @@ jobs:
             cd /srv/crawler-http-service
             export $(grep -v '^#' .env.prod | xargs)
             echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-            echo "Pulling latest image: ${IMAGE_NAME}"
-            docker pull ${IMAGE_NAME}
+            echo "Pulling latest image with tag: ${IMAGE_TAG}"
+            docker-compose -f docker-compose.prod.yml pull app
             echo "Deploying stack..."
             docker stack deploy --compose-file docker-compose.prod.yml --with-registry-auth crawler_stack
             echo "Deployment successful."
