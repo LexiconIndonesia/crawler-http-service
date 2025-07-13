@@ -139,7 +139,7 @@ ssh <your_username>@<your_vps_host>
 ```
 
 ### b. Prepare the Compose File
-The deployment process requires the `docker-compose.prod.yml` file. The GitHub Actions workflow creates this file automatically, but for a manual deployment, you need to place it on the VPS yourself.
+The deployment process requires the `docker-compose.prod.yml` file, which is included in this repository. For a manual deployment, ensure this file is present on the VPS.
 
 You can either clone the entire repository to your VPS or copy the file securely.
 
