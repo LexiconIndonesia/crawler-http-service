@@ -104,39 +104,102 @@ ssh-keygen -t ed25519 -C "your_email@example.com"
 -   `POSTGRES_USERNAME`: The username for the PostgreSQL database.
 -   `POSTGRES_PORT`: The port for PostgreSQL (e.g., `5432`).
 
--   `LISTEN_PORT`: The port the application will listen on (e.g., `8080`). This is not exposed publicly but is used for Nginx to route requests to the app.
+-   `LISTEN_PORT`: The port the application will listen on (e.g., `8080`). This is not exposed publicly but is used by Traefik to route requests to the app.
 -   `GCS_STORAGE_BUCKET`: The name of your Google Cloud Storage bucket.
 
 -   `NATS_PORT`: The port for NATS client connections (e.g., `4222`).
 -   `NATS_MONITORING_PORT`: The port for NATS HTTP monitoring (e.g., `8222`).
 -   `REDIS_PORT`: The port for Redis (e.g., `6379`).
 
-## 3. Triggering a Deployment
+## 3. Publishing a New Version
 
-The workflow is configured to run automatically whenever you push a new Git tag that follows a semantic versioning pattern (e.g., `v1.0.0`, `v1.2.3`).
+The workflow is configured to automatically build and publish a new Docker image whenever you push a Git tag that follows a semantic versioning pattern (e.g., `v1.0.0`, `v1.2.3`).
 
-To deploy a new version of your application:
+To publish a new version of your application:
 1.  Commit your changes to the `main` branch.
 2.  Create a new tag.
     ```bash
     git tag v1.0.1
     ```
-3.  Push the tag to GitHub. This will trigger the deployment workflow.
+3.  Push the tag to GitHub. This will trigger the build-and-publish workflow.
     ```bash
     git push origin v1.0.1
     ```
 
-You can monitor the progress of your deployment in the "Actions" tab of your GitHub repository.
+You can monitor the progress of your build in the "Actions" tab of your GitHub repository.
 
-## 4. Verify the Deployment
+## 4. Manual Deployment to VPS
 
-Once the workflow is complete, you can check the status of your deployed services:
+After a new image has been successfully published to the GitHub Container Registry, you can deploy it to your server by following these steps.
+
+### a. Connect to Your VPS
+Connect to your server using SSH.
+```bash
+ssh <your_username>@<your_vps_host>
+```
+
+### b. Prepare the Compose File
+The deployment process requires the `docker-compose.prod.yml` file, which is included in this repository. For a manual deployment, ensure this file is present on the VPS.
+
+You can either clone the entire repository to your VPS or copy the file securely.
+
+**Option 1: Clone the Repository (Recommended)**
+Cloning the repository is straightforward and ensures you have all necessary files.
+
+```bash
+# Clone your repository
+git clone https://github.com/LexiconIndonesia/crawler-http-service.git
+
+# Navigate into the project directory
+cd your-repo
+```
+From this point, run all subsequent commands from within this directory.
+
+**Option 2: Copy the File with `scp`**
+If you prefer not to clone the repository on your server, you can copy the file from your local machine.
+
+```bash
+# Run this command from your local machine
+scp docker-compose.prod.yml <your_username>@<your_vps_host>:/path/to/deployment/directory
+```
+
+### c. Set the Image Tag
+Before deploying, set the `IMAGE_TAG` environment variable to the version you want to deploy. This ensures that the subsequent commands pull and deploy the correct image.
+
+```bash
+export IMAGE_TAG=<your_new_version_tag>
+```
+**Note**: Replace `<your_new_version_tag>` with the actual version you are deploying (e.g., `v1.0.1`).
+
+### d. Log in to the GitHub Container Registry
+To pull the private image, you must log in to `ghcr.io` on your server. It is recommended to use a [Personal Access Token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with `read:packages` scope as your password.
+
+Run the following command. When prompted for a password, paste your PAT. This is more secure because it prevents the token from being saved in your shell's history.
+```bash
+docker login ghcr.io -u YOUR_GITHUB_USERNAME
+```
+
+### e. Deploy the Stack
+With the `IMAGE_TAG` variable set, pull the new image and redeploy the stack. Docker Swarm will perform a rolling update with zero downtime.
+
+```bash
+# Pull the new image specified by the IMAGE_TAG environment variable
+docker compose -f docker-compose.prod.yml pull app
+
+# Redeploy the stack, passing the IMAGE_TAG to the compose file.
+# The --with-registry-auth flag is crucial for allowing swarm nodes to pull private images.
+docker stack deploy --compose-file docker-compose.prod.yml --with-registry-auth crawler_stack
+```
+
+## 5. Verify the Deployment
+
+Once the deployment command is complete, you can check the status of your services:
 
 ```bash
 docker stack services crawler_stack
 ```
 
-You should see all services (`traefik`, `app`, `postgres`, `nats`, `redis`) with `1/1` in the `REPLICAS` column. It might take a minute for all containers to download and start.
+You should see all services (`traefik`, `app`, `postgres`, `nats`, `redis`) with `1/1` in the `REPLICAS` column. It might take a minute for all containers to download and restart.
 
 View the logs for a specific service:
 
@@ -144,11 +207,11 @@ View the logs for a specific service:
 docker service logs crawler_stack_app -f
 ```
 
-## 5. Managing the Application
+## 6. Managing the Application
 
 ### Updating the Application
 
-To update your application, simply push a new tag as described in the "Triggering a Deployment" section. The workflow will handle building the new image and updating the services.
+To update your application, publish a new version by pushing a tag, then follow the manual deployment steps.
 
 ### Stopping the Stack
 
